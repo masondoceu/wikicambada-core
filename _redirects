@@ -1,0 +1,9 @@
+/wiki/* /index.html 200
+/edit/* /index.html 200
+/history/* /index.html 200
+/suggest/* /index.html 200
+/admin/* /index.html 200
+/search /index.html 200
+/talk/* /index.html 200
+/discussao/* /index.html 200
+/usuario/* /index.html 200

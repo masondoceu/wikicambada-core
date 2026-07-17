@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+__pycache__/
+*.py[cod]
+.dev.vars
+.wikicambada/backups/
+.DS_Store

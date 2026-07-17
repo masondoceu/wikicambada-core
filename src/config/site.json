@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "site": {
+    "name": "WikiCambada",
+    "shortName": "WikiCambada",
+    "tagline": "A enciclopédia livre dos web-refugiados",
+    "description": "Wiki comunitária executada pelo WikiCambada Core",
+    "language": "pt-BR",
+    "interfaceLanguage": "pt-BR",
+    "homeSlug": "pagina-principal",
+    "baseUrl": "https://wiki.cambada.party",
+    "supportEmail": "suportewiki@cambada.party",
+    "aboutSlug": "sobre-a-wikicambada",
+    "editGuideSlug": "como-editar",
+    "defaultCategory": "WikiCambada"
+  },
+  "branding": {
+    "logo": "/src/media/images/wikicambada-logo.png",
+    "logoMobile": "/src/media/images/wikicambada-logo.png",
+    "favicon": "/src/media/images/favicon.png",
+    "coreIcon": "/src/media/images/core/cat-guard.png",
+    "coreWordmark": "/src/media/images/core/wikicambada-core-white.png",
+    "poweredByBadge": "/src/media/images/poweredby-wikicambada-core.png",
+    "randomIconManifest": "/src/data/wiki-icons.json",
+    "randomIcons": true
+  },
+  "appearance": {
+    "accentColor": "#3366cc",
+    "defaultTheme": "auto",
+    "fonts": {
+      "interface": "system-ui, sans-serif",
+      "content": "Georgia, serif",
+      "monospace": "ui-monospace, monospace"
+    }
+  },
+  "features": {
+    "search": true,
+    "talkPages": true,
+    "userPages": true,
+    "publicSuggestions": true,
+    "pageHistory": true,
+    "mediaUploads": true,
+    "templates": true,
+    "categories": true,
+    "randomPage": true,
+    "coreBadge": true,
+    "activityLogging": true,
+    "specialPages": {
+      "index": true,
+      "version": true,
+      "recentPages": true,
+      "allPages": true,
+      "categories": true,
+      "randomPage": true
+    }
+  },
+  "navigation": {
+    "main": [
+      { "label": "Página principal", "href": "/", "kind": "home" },
+      { "label": "Eventos atuais", "href": "/wiki/eventos-atuais", "kind": "page" },
+      { "label": "Arquivo Cambada", "href": "/wiki/arquivo-cambada", "kind": "page" },
+      { "label": "Páginas especiais", "href": "/wiki/especial", "kind": "page", "feature": "specialPages.index" },
+      { "label": "Página aleatória", "href": "/wiki/especial/pagina-aleatoria", "kind": "random", "feature": "randomPage" }
+    ],
+    "community": [
+      { "label": "Sobre a WikiCambada", "href": "/wiki/sobre-a-wikicambada", "kind": "page" },
+      { "label": "Como editar", "href": "/wiki/como-editar", "kind": "page" }
+    ],
+    "external": [
+      { "label": "cambada.party", "href": "https://cambada.party/" },
+      { "label": "cambada.chat", "href": "https://chat.cambada.party/" },
+      { "label": "maconhanet.org", "href": "https://maconhanet.org/" }
+    ]
+  },
+  "access": {
+    "mode": "cloudflare-access",
+    "superAdminEmail": "mason@national.shitposting.agency",
+    "strict": true
+  },
+  "cloudflare": {
+    "projectName": "wikicambada-core",
+    "databaseName": "wiki-cambada-party",
+    "bucketName": "wiki-cambada-party-uploads"
+  }
+}

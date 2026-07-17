@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR" class="error-booting">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f8f9fa" />
+  <title>Acesso bloqueado — WikiCambada</title>
+  <link id="faviconIcon" rel="icon" type="image/png" data-random-favicon />
+  <script>
+    (() => {
+      const themeKey = 'wikicambada.theme'
+      const fontKey = 'wikicambada.font'
+      const textSizeKey = 'wikicambada.textSize'
+      const allowed = ['auto', 'light', 'dark', 'oled']
+      const fontAllowed = ['mactype', 'classic']
+      const textSizeAllowed = ['small', 'normal', 'large']
+      let choice = 'auto'
+      let fontChoice = 'mactype'
+      let textSizeChoice = 'normal'
+      try {
+        const saved = localStorage.getItem(themeKey)
+        const savedFont = localStorage.getItem(fontKey)
+        const savedTextSize = localStorage.getItem(textSizeKey)
+        if (allowed.includes(saved)) choice = saved
+        if (fontAllowed.includes(savedFont)) fontChoice = savedFont
+        if (textSizeAllowed.includes(savedTextSize)) textSizeChoice = savedTextSize
+      } catch {}
+      const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      const theme = choice === 'auto' ? (dark ? 'dark' : 'light') : choice
+      document.documentElement.dataset.themeChoice = choice
+      document.documentElement.dataset.theme = theme
+      document.documentElement.dataset.fontChoice = fontChoice
+      document.documentElement.dataset.font = fontChoice
+      document.documentElement.dataset.textSizeChoice = textSizeChoice
+      document.documentElement.dataset.textSize = textSizeChoice
+      const meta = document.querySelector('meta[name="theme-color"]')
+      if (meta) meta.content = theme === 'oled' ? '#000000' : theme === 'dark' ? '#101418' : '#f8f9fa'
+    })()
+  </script>
+  <link rel="stylesheet" href="/src/styles/wiki.css" />
+</head>
+<body>
+  <div class="page-shell error-shell">
+    <aside class="wiki-sidebar" aria-label="Navegação lateral">
+      <a class="brand" href="/">
+        <img class="brand-globe" alt="" data-random-logo />
+        <span class="brand-wordmark">WikiCambada</span>
+        <span class="brand-subtitle">A enciclopédia livre dos web-refugiados</span>
+      </a>
+
+      <nav class="side-nav" aria-label="Menu principal">
+        <h2>Navegação</h2>
+        <a href="/">Página principal</a>
+        <a href="/wiki/eventos-atuais">Eventos atuais</a>
+        <a href="/wiki/arquivo-cambada">Arquivo Cambada</a>
+        <a href="/wiki/pagina-aleatoria">Página aleatória</a>
+      </nav>
+
+      <nav class="side-nav settings-nav" aria-label="Configurações">
+        <h2>Configurações</h2>
+        <label class="theme-setting">
+          Tema
+          <select data-theme-control>
+            <option value="auto">Automático</option>
+            <option value="light">Branco</option>
+            <option value="dark">Preto</option>
+            <option value="oled">OLED</option>
+          </select>
+        </label>
+        <label class="theme-setting">
+          Tamanho do texto
+          <select data-text-size-control>
+            <option value="small">Pequeno</option>
+            <option value="normal" selected>Normal</option>
+            <option value="large">Grande</option>
+          </select>
+        </label>
+      </nav>
+
+      <nav class="side-nav" aria-label="Comunidade">
+        <h2>Comunidade</h2>
+        <a href="/wiki/sobre-a-wikicambada">Sobre a WikiCambada</a>
+        <a href="/wiki/como-editar">Como editar</a>
+      </nav>
+
+      <nav class="side-nav" aria-label="Ferramentas">
+        <h2>Ferramentas</h2>
+        <a href="https://cambada.party/" rel="noreferrer">cambada.party</a>
+        <a href="https://chat.cambada.party/" rel="noreferrer">cambada.chat</a>
+        <a href="https://maconhanet.org/" rel="noreferrer">maconhanet.org</a>
+      </nav>
+    </aside>
+
+    <main class="wiki-main">
+      <header class="top-bar">
+        <div class="mobile-brand-row">
+          <a class="mobile-brand" href="/">
+            <img class="mobile-brand-icon" alt="" data-random-logo-mobile />
+            <span>
+              <strong>WikiCambada</strong>
+              <small>A enciclopédia livre dos web-refugiados</small>
+            </span>
+          </a>
+        </div>
+
+        <div class="mobile-settings-row">
+          <label class="theme-setting mobile-theme-setting">
+            Tema
+            <select data-theme-control>
+              <option value="auto">Automático</option>
+              <option value="light">Branco</option>
+              <option value="dark">Preto</option>
+              <option value="oled">OLED</option>
+            </select>
+          </label>
+        </div>
+
+        <nav class="personal-links" aria-label="Conta">
+          <a href="/wiki/como-editar">Quer editar?</a>
+          <a href="/api/auth/login?return=%2Fedit%2Fpagina-principal">Entrar</a>
+        </nav>
+
+        <div class="tabs-row">
+          <nav class="namespace-tabs" aria-label="Abas de namespace">
+            <a class="tab is-active" href="/">Sistema</a>
+          </nav>
+
+          <nav class="view-tabs" aria-label="Ações da página">
+            <a class="tab is-active" href="/">Ler</a>
+          </nav>
+
+          <form class="search-box" action="/search" role="search">
+            <label for="searchInput" class="sr-only">Pesquisar na WikiCambada</label>
+            <input id="searchInput" name="q" type="search" placeholder="Pesquisar na WikiCambada" autocomplete="off" />
+            <button type="submit" aria-label="Pesquisar">⌕</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="content-frame error-content" aria-live="polite">
+        <article class="article-page system-error-page">
+          <header class="article-header">
+            <h1>Acesso bloqueado</h1>
+            <p class="origin-line">Origem: WikiCambada — A enciclopédia livre dos web-refugiados</p>
+          </header>
+
+
+          <div class="wiki-messagebox wiki-messagebox-warning">
+            <strong>Olá.</strong>
+            <p>Seu acesso ao WikiCambada foi bloqueado pela administração devido à violação recorrente das políticas do site.</p>
+          </div>
+
+          <div class="article-body">
+            <p>Após uma cuidadosa decisão, tomada após a análise de suas atividades recentes, restringe, por tempo indefinido, o seu endereço de IP de ler ou editar páginas, mover artigos ou interagir em páginas de discussão.</p>
+            <p>Isso pode acontecer por causa de (mas não limitado à):</p>
+            <ul>
+              <li>Vandalismo recorrente;</li>
+              <li>Spam;</li>
+              <li>Endereço IP bloqueado por abuso;</li>
+              <li>Bloqueio regional;</li>
+              <li>Conduta maliciosa;</li>
+              <li>Scraping agressivo (não-respeito ao robots.txt);</li>
+              <li>Ataques de negação de serviço (DoS/DDoS);</li>
+              <li>Ataques de força bruta;</li>
+              <li>Injeção de código (XSS/SQLi);</li>
+              <li>Exploração de APIs;</li>
+              <li>Bots de spam automatizados;</li>
+              <li>Bloqueio por sinalização da Cloudflare.</li>
+            </ul>
+            <p>Se você acredita que tenha sido bloqueado por engano, entre em contato conosco pelo e-mail <a href="mailto:suportewiki@cambada.party">suportewiki@cambada.party</a>.</p>
+            <p>Consulte a documentação ou entre em contato com o suporte da instalação para mais informações.</p>
+            <p>Agradecemos.<br />— Equipe WikiCambada.</p>
+          </div>
+
+          <div class="editor-actions error-actions">
+            <a class="button-link is-primary" href="/">Página principal</a>
+            <a class="button-link" href="/wiki/como-editar">Como editar</a>
+            <a class="button-link" href="mailto:suportewiki@cambada.party">Contato de suporte</a>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { bootStaticPage } from '/src/scripts/static-page.js'
+
+    await bootStaticPage()
+  </script>
+</body>
+</html>

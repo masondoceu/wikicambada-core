@@ -1,0 +1,19 @@
+import { requireAccessUser } from '../../_lib/access'
+import { globalSettingEnabled, hasDb, listContentTemplates, type Env } from '../../_lib/d1'
+import { error, json } from '../../_lib/response'
+
+type Context = EventContext<Env, string, Record<string, never>>
+
+export async function onRequestGet({ request, env }: Context) {
+  if (!(await globalSettingEnabled(env, 'templates'))) return json([])
+  const user = await requireAccessUser(request, env)
+  if (!user) return error('templates restritos a editores autenticados', 403)
+  if (!hasDb(env)) return json(await listContentTemplates(env, { role: user.role || 'editor' }))
+
+  try {
+    return json(await listContentTemplates(env, { role: user.role || 'editor' }))
+  } catch (exception) {
+    const message = exception instanceof Error ? exception.message : 'erro interno'
+    return error(message, 500)
+  }
+}

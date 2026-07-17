@@ -1,0 +1,25 @@
+name = "wikicambada-core"
+compatibility_date = "2026-06-22"
+pages_build_output_dir = "."
+
+[vars]
+ACCESS_TEAM_DOMAIN = "https://masondoceu.cloudflareaccess.com"
+ACCESS_AUD = "4dc22569c0306be44d76040c0969519a2487867dcdd1152e1198103e09b66b10"
+ACCESS_STRICT = "true"
+PUBLIC_BASE_URL = "https://wiki.cambada.party"
+WIKI_SITE_NAME = "WikiCambada"
+WIKI_SUPER_ADMIN_EMAIL = "mason@national.shitposting.agency"
+WIKI_CORE_VERSION = "v1.1.0 Beta"
+WIKI_FEATURES_JSON = "{\"search\":true,\"talkPages\":true,\"userPages\":true,\"publicSuggestions\":true,\"pageHistory\":true,\"mediaUploads\":true,\"templates\":true,\"categories\":true,\"randomPage\":true,\"coreBadge\":true,\"activityLogging\":true,\"specialPages\":{\"index\":true,\"version\":true,\"recentPages\":true,\"allPages\":true,\"categories\":true,\"randomPage\":true}}"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wiki-cambada-party"
+database_id = "1de44703-ba51-4749-85e8-9a75c3f19713"
+preview_database_id = "1de44703-ba51-4749-85e8-9a75c3f19713"
+migrations_dir = "src/data/migrations"
+migrations_table = "d1_migrations"
+
+[[r2_buckets]]
+binding = "WIKI_BUCKET"
+bucket_name = "wiki-cambada-party-uploads"

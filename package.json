@@ -1,0 +1,17 @@
+{
+  "name": "wikicambada-core",
+  "version": "1.1.0-beta",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev .",
+    "deploy": "wrangler pages deploy . --project-name wikicambada-core",
+    "db:migrations:apply:local": "wrangler d1 migrations apply wiki-cambada-party --local",
+    "db:migrations:apply:remote": "wrangler d1 migrations apply wiki-cambada-party --remote",
+    "setup": "python3 setup.py",
+    "verify": "python3 setup.py verify"
+  },
+  "devDependencies": {
+    "wrangler": "latest"
+  }
+}

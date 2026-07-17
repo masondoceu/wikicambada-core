@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "installationId": "wikicambada",
+  "distribution": "custom",
+  "distributionVersion": "1.0.0",
+  "coreVersion": "1.1.0-beta",
+  "configSchema": 1,
+  "databaseSchema": 15,
+  "updateChannel": "beta",
+  "createdAt": "2026-07-16T00:00:00.000Z",
+  "lastUpdatedAt": "2026-07-16T00:00:00.000Z"
+}

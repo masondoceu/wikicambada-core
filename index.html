@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pt-BR" class="is-booting">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f8f9fa" />
+  <title>WikiCambada Core</title>
+  <link id="faviconIcon" rel="icon" type="image/png" data-site-favicon data-random-favicon />
+  <script>
+    (() => {
+      const themeKey = 'wikicambada.theme'
+      const fontKey = 'wikicambada.font'
+      const textSizeKey = 'wikicambada.textSize'
+      const allowed = ['auto', 'light', 'dark', 'oled']
+      const fontAllowed = ['mactype', 'classic']
+      const textSizeAllowed = ['small', 'normal', 'large']
+      let choice = 'auto'
+      const platform = navigator.userAgentData?.platform || navigator.platform || ''
+      const userAgent = navigator.userAgent || ''
+      const vendor = navigator.vendor || ''
+      const iPadDesktopMode = platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1
+      const mobileEnvironment = iPadDesktopMode || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)
+      const appleEnvironment = iPadDesktopMode || /Mac|iPhone|iPad|iPod/i.test(platform) || /Macintosh|iPhone|iPad|iPod/i.test(userAgent) || /Apple/i.test(vendor)
+      document.documentElement.dataset.mobileUi = mobileEnvironment ? 'true' : 'false'
+      let fontChoice = appleEnvironment ? 'classic' : 'mactype'
+      let textSizeChoice = 'normal'
+      try {
+        const saved = localStorage.getItem(themeKey)
+        const savedFont = localStorage.getItem(fontKey)
+        const savedTextSize = localStorage.getItem(textSizeKey)
+        if (allowed.includes(saved)) choice = saved
+        if (fontAllowed.includes(savedFont)) fontChoice = savedFont
+        if (textSizeAllowed.includes(savedTextSize)) textSizeChoice = savedTextSize
+      } catch {}
+      const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      const theme = choice === 'auto' ? (dark ? 'dark' : 'light') : choice
+      document.documentElement.dataset.themeChoice = choice
+      document.documentElement.dataset.theme = theme
+      document.documentElement.dataset.fontChoice = fontChoice
+      document.documentElement.dataset.font = fontChoice
+      document.documentElement.dataset.textSize = textSizeChoice
+      document.documentElement.dataset.textSizeChoice = textSizeChoice
+      const meta = document.querySelector('meta[name="theme-color"]')
+      if (meta) meta.content = theme === 'oled' ? '#000000' : theme === 'dark' ? '#101418' : '#f8f9fa'
+    })()
+  </script>
+  <link rel="stylesheet" href="/src/styles/wiki.css" />
+</head>
+<body>
+  <div class="boot-screen" id="bootScreen" role="status" aria-live="polite">
+    <div class="boot-card">
+      <strong data-site-name>WikiCambada Core</strong>
+      <span data-site-tagline>Uma wiki serverless</span>
+    </div>
+  </div>
+
+  <div class="page-shell" aria-hidden="true">
+    <aside class="wiki-sidebar" aria-label="Navegação lateral">
+      <a class="brand" href="/" data-link="home">
+        <img class="brand-globe" alt="" data-site-logo data-random-logo />
+        <span class="brand-wordmark" data-site-name>WikiCambada Core</span>
+        <span class="brand-subtitle" data-site-tagline>Uma wiki serverless</span>
+      </a>
+
+      <nav class="side-nav" aria-label="Menu principal">
+        <h2>Navegação</h2>
+        <div class="side-nav-links" data-navigation-section="main"></div>
+      </nav>
+
+      <nav class="side-nav settings-nav" aria-label="Configurações">
+        <h2>Configurações</h2>
+        <label class="theme-setting">
+          Tema
+          <select data-theme-control>
+            <option value="auto">Automático</option>
+            <option value="light">Branco</option>
+            <option value="dark">Preto</option>
+            <option value="oled">OLED</option>
+          </select>
+        </label>
+        <label class="theme-setting">
+          Fonte
+          <select data-font-control>
+            <option value="mactype">MacType</option>
+            <option value="classic">Clássico</option>
+          </select>
+        </label>
+        <label class="theme-setting">
+          Tamanho do texto
+          <select data-text-size-control>
+            <option value="small">Pequeno</option>
+            <option value="normal" selected>Normal</option>
+            <option value="large">Grande</option>
+          </select>
+        </label>
+      </nav>
+
+      <nav class="side-nav" aria-label="Comunidade">
+        <h2>Comunidade</h2>
+        <div class="side-nav-links" data-navigation-section="community"></div>
+      </nav>
+
+      <nav class="side-nav" aria-label="Ferramentas">
+        <h2>Ferramentas</h2>
+        <a href="/history/cambada" data-link="history" data-chrome-link="history">Ver histórico</a>
+        <a href="/talk/cambada" data-link="page" data-chrome-link="talk-tool">Discussão</a>
+        <a href="/edit/cambada" data-link="edit" data-chrome-link="edit">Editar</a>
+        <a href="/admin" data-link="route">Administração</a>
+        <div class="side-nav-links" data-navigation-section="external"></div>
+      </nav>
+    </aside>
+
+    <main class="wiki-main">
+      <header class="top-bar">
+        <div class="mobile-brand-row">
+          <a class="mobile-brand" href="/" data-link="home">
+            <img class="mobile-brand-icon" alt="" data-site-logo-mobile data-random-logo-mobile />
+            <span>
+              <strong data-site-name>WikiCambada Core</strong>
+              <small data-site-tagline>Uma wiki serverless</small>
+            </span>
+          </a>
+        </div>
+
+        <details class="mobile-settings-panel">
+          <summary>Configurações</summary>
+          <div class="mobile-settings-row">
+            <label class="theme-setting mobile-theme-setting">
+              Tema
+              <select data-theme-control>
+                <option value="auto">Automático</option>
+                <option value="light">Branco</option>
+                <option value="dark">Preto</option>
+                <option value="oled">OLED</option>
+              </select>
+            </label>
+            <label class="theme-setting mobile-theme-setting">
+              Fonte
+              <select data-font-control>
+                <option value="mactype">MacType</option>
+                <option value="classic">Clássico</option>
+              </select>
+            </label>
+            <label class="theme-setting mobile-theme-setting">
+              Tamanho do texto
+              <select data-text-size-control>
+                <option value="small">Pequeno</option>
+                <option value="normal" selected>Normal</option>
+                <option value="large">Grande</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <nav class="personal-links" aria-label="Conta" data-account-links>
+          <a href="/wiki/como-editar" data-link="page" data-slug="como-editar">Quer editar?</a>
+          <a href="/api/auth/login?return=%2Fedit%2Fcambada">Entrar</a>
+        </nav>
+
+        <div class="tabs-row">
+          <nav class="namespace-tabs" aria-label="Abas de namespace">
+            <a class="tab is-active" href="/wiki/cambada" data-link="page" data-chrome-link="article">Artigo</a>
+            <a class="tab" href="/talk/cambada" data-link="page" data-chrome-link="talk">Discussão</a>
+          </nav>
+
+          <nav class="view-tabs" aria-label="Ações da página">
+            <a class="tab is-active" href="/wiki/cambada" data-link="page" data-chrome-link="read">Ler</a>
+            <a class="tab" href="/edit/cambada" data-link="edit" data-chrome-link="edit-tab" hidden>Editar</a>
+            <a class="tab" href="/suggest/cambada" data-link="suggest" data-chrome-link="suggest-tab">Sugerir edição</a>
+            <a class="tab" href="/history/cambada" data-link="history" data-chrome-link="history-tab">Ver histórico</a>
+          </nav>
+
+          <form class="search-box" id="searchForm" role="search">
+            <label for="searchInput" class="sr-only">Pesquisar na wiki</label>
+            <input id="searchInput" name="q" type="search" placeholder="Pesquisar na wiki" autocomplete="off" />
+            <button type="submit" aria-label="Pesquisar">⌕</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="content-frame" id="app" aria-live="polite" aria-busy="true"></section>
+    </main>
+  </div>
+
+  <script type="module" src="/src/scripts/app.js"></script>
+</body>
+</html>

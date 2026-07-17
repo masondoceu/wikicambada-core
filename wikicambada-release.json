@@ -1,0 +1,25 @@
+{
+  "product": "WikiCambada Core",
+  "version": "1.1.0-beta",
+  "displayVersion": "v1.1.0 Beta",
+  "channel": "beta",
+  "minimumUpgradeableVersion": "1.0.13",
+  "configSchema": 1,
+  "databaseSchema": 15,
+  "filesManifest": "wikicambada-files.json",
+  "preservedPaths": [
+    "src/config",
+    "src/media/branding",
+    "src/media/fonts",
+    ".dev.vars",
+    "wrangler.toml"
+  ],
+  "migrations": [
+    "src/data/migrations/0015_v1_1_0_global_settings.sql"
+  ],
+  "requirements": {
+    "python": ">=3.11",
+    "node": ">=20",
+    "wrangler": ">=4"
+  }
+}
