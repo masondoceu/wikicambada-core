@@ -444,7 +444,7 @@ WikiCambada Core foi criado e é mantido por **masondoceu**. O projeto nasceu co
 
 A experiência do setup usa o instalador do MediaWiki como referência de fluxo e separação de etapas, sem reutilizar seu código PHP nem se apresentar como uma implementação do MediaWiki.
 
-O ícone oficial do WikiCambada Core continua sendo o **Cat Guard**.
+O ícone oficial do WikiCambada Core é o **Cat Guard**. Miau.
 
 ## Licença e direitos autorais
 
