@@ -10,8 +10,6 @@
 
 **WikiCambada Core** é um motor de wiki serverless feito para o ecossistema Cloudflare. Ele combina uma aplicação web estática com Pages Functions, D1, R2 e Cloudflare Access para oferecer artigos em Markdown, revisões, administração, mídia, busca, categorias, templates e colaboração sem manter um servidor tradicional.
 
-A partir da versão **v1.1.0-r2**, o Core não assume que toda instalação é a WikiCambada. Nome, identidade visual, fontes, navegação, recursos, acesso e bindings podem ser configurados pelo setup local. A WikiCambada é uma instalação do mesmo Core, enquanto outras wikis — como documentação de software — podem ter aparência e comportamento independentes.
-
 ## Índice
 
 - [Para que serve](#para-que-serve)
