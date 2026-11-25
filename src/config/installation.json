@@ -1,12 +1,13 @@
 {
   "formatVersion": 1,
-  "installationId": "wikicambada",
-  "distribution": "custom",
+  "installationId": "heartbeat",
+  "distribution": "documentation",
   "distributionVersion": "1.0.0",
-  "coreVersion": "1.1.0-beta",
+  "coreVersion": "1.1.0-r2",
   "configSchema": 1,
   "databaseSchema": 15,
-  "updateChannel": "beta",
-  "createdAt": "2026-07-16T00:00:00.000Z",
-  "lastUpdatedAt": "2026-07-16T00:00:00.000Z"
+  "updateChannel": "stable",
+  "createdAt": "2026-07-31T00:00:00.000Z",
+  "lastUpdatedAt": "2026-08-01T00:05:53.834394Z",
+  "requiredDatabaseSchema": 17
 }

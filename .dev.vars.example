@@ -1,1 +1,4 @@
 DISCORD_EDIT_WEBHOOK_URL="https://discord.com/api/webhooks/cole-aqui"
+
+# bypass local disponível apenas pelo servidor de desenvolvimento
+DEV_BYPASS_AUTH=false

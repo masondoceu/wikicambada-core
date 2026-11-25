@@ -25,7 +25,7 @@ export async function onRequestPost({ request, env }: Context) {
   if (!user) return error('gerenciamento de redirecionamentos bloqueado pela política de acesso', 401)
   if (!hasDb(env)) return error('D1 ainda não foi ligado', 501)
 
-  const input = await request.json().catch(() => null) as any
+  const input: any = await request.json().catch(() => null) as any
   const action = String(input?.action || '').trim()
 
   try {

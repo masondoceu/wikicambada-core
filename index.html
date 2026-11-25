@@ -63,49 +63,49 @@
       </a>
 
       <nav class="side-nav" aria-label="Menu principal">
-        <h2>Navegação</h2>
+        <h2 data-i18n="shell.navigation">Navegação</h2>
         <div class="side-nav-links" data-navigation-section="main"></div>
       </nav>
 
       <nav class="side-nav settings-nav" aria-label="Configurações">
-        <h2>Configurações</h2>
+        <h2 data-i18n="shell.settings">Configurações</h2>
         <label class="theme-setting">
-          Tema
+          <span data-i18n="shell.theme">Tema</span>
           <select data-theme-control>
-            <option value="auto">Automático</option>
-            <option value="light">Branco</option>
-            <option value="dark">Preto</option>
+            <option value="auto" data-i18n="shell.theme.auto">Automático</option>
+            <option value="light" data-i18n="shell.theme.light">Branco</option>
+            <option value="dark" data-i18n="shell.theme.dark">Preto</option>
             <option value="oled">OLED</option>
           </select>
         </label>
         <label class="theme-setting">
-          Fonte
+          <span data-i18n="shell.font">Fonte</span>
           <select data-font-control>
             <option value="mactype">MacType</option>
-            <option value="classic">Clássico</option>
+            <option value="classic" data-i18n="shell.font.classic">Clássico</option>
           </select>
         </label>
         <label class="theme-setting">
-          Tamanho do texto
+          <span data-i18n="shell.textSize">Tamanho do texto</span>
           <select data-text-size-control>
-            <option value="small">Pequeno</option>
-            <option value="normal" selected>Normal</option>
-            <option value="large">Grande</option>
+            <option value="small" data-i18n="shell.textSize.small">Pequeno</option>
+            <option value="normal" data-i18n="shell.textSize.normal" selected>Normal</option>
+            <option value="large" data-i18n="shell.textSize.large">Grande</option>
           </select>
         </label>
       </nav>
 
       <nav class="side-nav" aria-label="Comunidade">
-        <h2>Comunidade</h2>
+        <h2 data-i18n="shell.community">Comunidade</h2>
         <div class="side-nav-links" data-navigation-section="community"></div>
       </nav>
 
       <nav class="side-nav" aria-label="Ferramentas">
-        <h2>Ferramentas</h2>
-        <a href="/history/cambada" data-link="history" data-chrome-link="history">Ver histórico</a>
-        <a href="/talk/cambada" data-link="page" data-chrome-link="talk-tool">Discussão</a>
-        <a href="/edit/cambada" data-link="edit" data-chrome-link="edit">Editar</a>
-        <a href="/admin" data-link="route">Administração</a>
+        <h2 data-i18n="shell.tools">Ferramentas</h2>
+        <a href="/" data-link="history" data-chrome-link="history" data-i18n="shell.history">Ver histórico</a>
+        <a href="/" data-link="page" data-chrome-link="talk-tool" data-i18n="shell.talk">Discussão</a>
+        <a href="/" data-link="edit" data-chrome-link="edit" data-i18n="shell.edit">Editar</a>
+        <a href="/admin" data-link="route" data-i18n="shell.admin">Administração</a>
         <div class="side-nav-links" data-navigation-section="external"></div>
       </nav>
     </aside>
@@ -123,57 +123,57 @@
         </div>
 
         <details class="mobile-settings-panel">
-          <summary>Configurações</summary>
+          <summary data-i18n="shell.settings">Configurações</summary>
           <div class="mobile-settings-row">
             <label class="theme-setting mobile-theme-setting">
-              Tema
+              <span data-i18n="shell.theme">Tema</span>
               <select data-theme-control>
-                <option value="auto">Automático</option>
-                <option value="light">Branco</option>
-                <option value="dark">Preto</option>
+                <option value="auto" data-i18n="shell.theme.auto">Automático</option>
+                <option value="light" data-i18n="shell.theme.light">Branco</option>
+                <option value="dark" data-i18n="shell.theme.dark">Preto</option>
                 <option value="oled">OLED</option>
               </select>
             </label>
             <label class="theme-setting mobile-theme-setting">
-              Fonte
+              <span data-i18n="shell.font">Fonte</span>
               <select data-font-control>
                 <option value="mactype">MacType</option>
-                <option value="classic">Clássico</option>
+                <option value="classic" data-i18n="shell.font.classic">Clássico</option>
               </select>
             </label>
             <label class="theme-setting mobile-theme-setting">
-              Tamanho do texto
+              <span data-i18n="shell.textSize">Tamanho do texto</span>
               <select data-text-size-control>
-                <option value="small">Pequeno</option>
-                <option value="normal" selected>Normal</option>
-                <option value="large">Grande</option>
+                <option value="small" data-i18n="shell.textSize.small">Pequeno</option>
+                <option value="normal" data-i18n="shell.textSize.normal" selected>Normal</option>
+                <option value="large" data-i18n="shell.textSize.large">Grande</option>
               </select>
             </label>
           </div>
         </details>
 
-        <nav class="personal-links" aria-label="Conta" data-account-links>
-          <a href="/wiki/como-editar" data-link="page" data-slug="como-editar">Quer editar?</a>
-          <a href="/api/auth/login?return=%2Fedit%2Fcambada">Entrar</a>
+        <nav class="personal-links" aria-label="Conta" data-i18n-aria-label="shell.account" data-account-links>
+          <a href="/wiki/como-editar" data-link="page" data-slug="como-editar" data-edit-guide-link data-i18n="shell.wantToEdit">Quer editar?</a>
+          <a href="/api/auth/login?return=%2Fedit%2Fpagina-principal" data-i18n="shell.signIn">Entrar</a>
         </nav>
 
         <div class="tabs-row">
           <nav class="namespace-tabs" aria-label="Abas de namespace">
-            <a class="tab is-active" href="/wiki/cambada" data-link="page" data-chrome-link="article">Artigo</a>
-            <a class="tab" href="/talk/cambada" data-link="page" data-chrome-link="talk">Discussão</a>
+            <a class="tab is-active" href="/" data-link="page" data-chrome-link="article" data-i18n="shell.article">Artigo</a>
+            <a class="tab" href="/" data-link="page" data-chrome-link="talk" data-i18n="shell.talk">Discussão</a>
           </nav>
 
           <nav class="view-tabs" aria-label="Ações da página">
-            <a class="tab is-active" href="/wiki/cambada" data-link="page" data-chrome-link="read">Ler</a>
-            <a class="tab" href="/edit/cambada" data-link="edit" data-chrome-link="edit-tab" hidden>Editar</a>
-            <a class="tab" href="/suggest/cambada" data-link="suggest" data-chrome-link="suggest-tab">Sugerir edição</a>
-            <a class="tab" href="/history/cambada" data-link="history" data-chrome-link="history-tab">Ver histórico</a>
+            <a class="tab is-active" href="/" data-link="page" data-chrome-link="read" data-i18n="shell.read">Ler</a>
+            <a class="tab" href="/" data-link="edit" data-chrome-link="edit-tab" data-i18n="shell.edit" hidden>Editar</a>
+            <a class="tab" href="/" data-link="suggest" data-chrome-link="suggest-tab" data-i18n="shell.suggest">Sugerir edição</a>
+            <a class="tab" href="/" data-link="history" data-chrome-link="history-tab" data-i18n="shell.history">Ver histórico</a>
           </nav>
 
           <form class="search-box" id="searchForm" role="search">
-            <label for="searchInput" class="sr-only">Pesquisar na wiki</label>
-            <input id="searchInput" name="q" type="search" placeholder="Pesquisar na wiki" autocomplete="off" />
-            <button type="submit" aria-label="Pesquisar">⌕</button>
+            <label for="searchInput" class="sr-only" data-i18n="shell.search">Pesquisar na wiki</label>
+            <input id="searchInput" name="q" type="search" placeholder="Pesquisar na wiki" data-i18n-placeholder="shell.search" autocomplete="off" />
+            <button type="submit" aria-label="Pesquisar" data-i18n-aria-label="shell.searchAction">⌕</button>
           </form>
         </div>
       </header>

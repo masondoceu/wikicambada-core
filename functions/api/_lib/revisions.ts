@@ -1,5 +1,5 @@
 import { requireAccessUser } from './access'
-import { globalSettingEnabled, hasDb, normalizeSlug, writePage, type Env } from './d1'
+import { EditorialError, globalSettingEnabled, hasDb, normalizeSlug, writePage, type Env } from './d1'
 import { error, json } from './response'
 
 type RevisionContext = EventContext<Env, string, { slug?: string[] | string }>
@@ -21,6 +21,8 @@ function validateRevisionPayload(input: any) {
   if (!title || !content.trim() || !summary) return null
 
   return {
+    expectedRevisionId: input.expectedRevisionId as string | null,
+    ...(typeof input.sourceSlug === 'string' ? { sourceSlug: input.sourceSlug } : {}),
     title,
     subtitle: typeof input.subtitle === 'string' ? input.subtitle.trim() : '',
     content,
@@ -50,7 +52,9 @@ export async function createRevision({ request, env, params }: RevisionContext) 
   if (!user) return error('edição bloqueada pela política de acesso', 401)
   if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
-  const input = await request.json().catch(() => null)
+  const input: any = await request.json().catch(() => null)
+  if (!input || !Object.hasOwn(input, 'expectedRevisionId')) return error('revisão-base obrigatória', 428)
+  if (input.expectedRevisionId !== null && typeof input.expectedRevisionId !== 'string') return error('revisão-base inválida', 400)
   const payload = validateRevisionPayload(input)
   if (!payload) return error('dados de edição incompletos ou inválidos', 400)
   if (!(await globalSettingEnabled(env, 'categories'))) payload.categories = []
@@ -60,8 +64,8 @@ export async function createRevision({ request, env, params }: RevisionContext) 
     return json({ ok: true, page })
   } catch (exception) {
     const message = exception instanceof Error ? exception.message : 'erro interno'
-    const status = message.startsWith('edição recusada:') ? 400 : 500
-    return error(`não foi possível salvar a revisão: ${message}`, status)
+    const status = exception instanceof EditorialError ? exception.status : message.startsWith('edição recusada:') ? 400 : 500
+    return error(status < 500 ? message : 'não foi possível salvar a revisão', status)
   }
 }
 

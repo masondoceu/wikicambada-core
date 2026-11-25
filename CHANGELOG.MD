@@ -1,5 +1,55 @@
 # Changelog do WikiCambada Core
 
+## v1.1.0-r2
+
+Revisão corretiva da série v1.1.0, com foco na separação entre o Core distribuível e a instalação WikiCambada, segurança do setup e consistência da interface configurável.
+
+### Correções
+
+- remove rotas iniciais, guia de edição, identidade, navegação, bindings, e-mails e assets específicos da instalação WikiCambada
+- remove o codinome interno da documentação pública e sincroniza a versão `v1.1.0-r2` entre runtime, setup, pacote, instalação e release
+- faz o frontend carregar a versão pelo manifesto da release em vez de manter uma cópia fixa
+- aplica `homeSlug`, `aboutSlug` e `editGuideSlug` configurados ao shell e às páginas estáticas
+- substitui a troca textual frágil das páginas estáticas por campos de configuração e chaves de interface
+- adiciona localização em português brasileiro e inglês ao shell, às páginas estáticas e às principais páginas públicas geradas pelo Core
+- impede injeção de TOML e de comandos nos nomes de projeto, D1 e R2 gerados pelo setup
+- valida URLs, e-mails, slugs, navegação, temas, fontes, branding e limites dos arquivos enviados ao setup
+- restringe uploads de branding a formatos raster seguros e rejeita URLs com credenciais embutidas
+- protege o servidor local do setup contra origens externas, tipos de conteúdo inesperados e requisições excessivas
+- reforça a atualização por ZIP contra travessia de diretórios, links simbólicos, arquivos especiais, pacotes excessivos e arquivos omitidos do manifesto
+- preserva assets locais referenciados pela configuração, inclusive quando o novo pacote contém o mesmo caminho
+- desativa escrita pelas rotas legadas de upload e mantém leitura compatível somente no prefixo `uploads/`
+- compensa falhas D1/R2 sem remover objetos cujo registro já tenha sido persistido e mantém uma fila recuperável de exclusões
+- corrige o limite do formulário de upload para considerar o overhead multipart sem elevar o limite do arquivo
+- remove handlers inline duplicados do visualizador de mídia
+- amplia a verificação do projeto com lockfile, bindings, configuração e hashes dos arquivos do Core
+- fixa a versão do Wrangler e registra o requisito real de Node.js 22
+
+### Estabilização
+
+- publica apenas os assets preparados em `.wikicambada/public`, com configuração pública limitada a campos conhecidos
+- fecha autorização sob falhas de perfil/bindings, preserva contas desativadas e valida assinatura e claims do JWT
+- restringe autenticação permissiva ao desenvolvimento explicitamente configurado em loopback
+- protege operações contra CSRF, limita propostas públicas e confere assinaturas dos formatos de upload
+- remove dados privados desnecessários das respostas públicas e aplica disponibilidade também às rotas de compatibilidade
+- grava páginas, revisões, categorias, aliases, redirecionamentos, busca e aprovação em batches atômicos do D1
+- exige revisão-base na edição, restauração e aprovação, com recusa de conflitos no servidor
+- preserva metadados históricos vazios e categorias existentes quando seu recurso está desativado
+- adiciona recuperação integral de D1/R2, com manifesto, validação prévia, bloqueio de escrita, transferência paginada, retomada e abortamento
+- reforça atualização, configuração e recuperação locais com exclusão mútua, journals e detecção antecipada de conflitos
+- separa distribuição genérica dos assets da instalação, compara revisões de versão e permite fixar um hash confiável do ZIP
+- pagina páginas, busca, histórico, arquivos e objetos R2 e calcula totais completos
+- corrige links internos com fragmentos, slugs, entidades e parâmetros de query
+- aplica tema inicial, logo escuro, templates e modo privado, e localiza componentes editoriais, históricos e administrativos
+- distingue erros de API de resultados vazios e mantém propostas/rascunhos até confirmação de persistência
+- migra o setup e seus testes de Python para Node.js, preservando formatos de configuração, pacotes, journals e recuperação
+- adiciona lançadores Windows/Unix/macOS, encerramento seguro pelo botão Fechar e acompanhamento das abas conectadas
+- cria páginas iniciais idempotentes nas novas instalações e permite administração local com `DEV_BYPASS_AUTH` e prova do servidor de desenvolvimento
+- simplifica as informações públicas de versão
+- adiciona testes de runtime e integração, validação TypeScript e verificação local das Functions/migrations
+
+Adiciona `0016_v1_1_0_write_guards.sql` e `0017_v1_1_0_recovery.sql`. O schema exigido passa a 17. As migrations anteriores permanecem intactas. A compatibilidade final com a instalação `1.0.13` ainda depende de um snapshot representativo.
+
 ## v1.1.0 Beta
 
 Esta versão inicia a transformação do WikiCambada Core em um motor de wiki implementável para instalações independentes, mantendo compatibilidade com a WikiCambada original.
@@ -137,7 +187,7 @@ Esta versão inicia a transformação do WikiCambada Core em um motor de wiki im
 
 ## v1.0.3 Beta 3
 
-Beta 3 refaz o sistema de templates editoriais para ficar mais próximo de predefinições de wiki/MediaWiki, com chamadas `{{Template|param=valor}}`, renderização própria, parâmetros, imagem/ícone, posição visual e galeria de inserção no editor. O domínio público recomendado continua sendo `wiki.cambada.party`.
+Beta 3 refaz o sistema de templates editoriais para ficar mais próximo de predefinições de wiki/MediaWiki, com chamadas `{{Template|param=valor}}`, renderização própria, parâmetros, imagem/ícone, posição visual e galeria de inserção no editor. O domínio público usado nos exemplos é `wiki.example.com`.
 
 ### Novidades
 
@@ -152,7 +202,7 @@ Beta 3 refaz o sistema de templates editoriais para ficar mais próximo de prede
 
 ## v1.0.2 Beta 2
 
-Beta 2 adiciona páginas de discussão, páginas de usuário e uma primeira versão da galeria/criador de templates editoriais. O domínio público recomendado agora é `wiki.cambada.party`.
+Beta 2 adiciona páginas de discussão, páginas de usuário e uma primeira versão da galeria/criador de templates editoriais. O domínio público usado nos exemplos é `wiki.example.com`.
 
 ### Novidades
 
@@ -417,10 +467,10 @@ As variáveis comuns ficam no `wrangler.toml`:
 
 ```toml
 [vars]
-ACCESS_TEAM_DOMAIN = "https://masondoceu.cloudflareaccess.com"
-ACCESS_AUD = "4dc22569c0306be44d76040c0969519a2487867dcdd1152e1198103e09b66b10"
+ACCESS_TEAM_DOMAIN = "https://example.cloudflareaccess.com"
+ACCESS_AUD = "seu-audience-id"
 ACCESS_STRICT = "true"
-PUBLIC_BASE_URL = "https://wiki.cambada.party"
+PUBLIC_BASE_URL = "https://wiki.example.com"
 ```
 
 O webhook do Discord deve ser salvo como secret do Pages:
@@ -509,7 +559,7 @@ Exemplos de Markdown novo:
 
 {{Artigo principal|Cambada}}
 
-{{Ver também|WikiCambada Core|cambada.party}}
+{{Ver também|WikiCambada Core|wiki.example.com}}
 
 {{Nota|Esta página ainda está em organização editorial.}}
 
@@ -678,7 +728,7 @@ Esta build adiciona a base de hierarquia editorial e administração final do ci
 
 ### Hierarquia interna
 
-O Cloudflare Access continua sendo o login. Qualquer e-mail autorizado pelo Access é cadastrado automaticamente como `editor` no D1. O e-mail `mason@national.shitposting.agency` é tratado como `super_admin` fixo.
+O Cloudflare Access continua sendo o login. Qualquer e-mail autorizado pelo Access é cadastrado automaticamente como `editor` no D1. O e-mail configurado em `WIKI_SUPER_ADMIN_EMAIL` recebe o cargo `super_admin`.
 
 Cargos internos:
 

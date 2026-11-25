@@ -1,10 +1,12 @@
 import { requireAccessUser } from '../../_lib/access'
 import { globalSettingEnabled, hasDb, listUploads, recordUpload, slugFromTitle, type Env } from '../../_lib/d1'
 import { error, json } from '../../_lib/response'
+import { matchesMediaType } from '../../_lib/media'
 
 type Context = EventContext<Env, string, Record<string, never>>
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+const MAX_REQUEST_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024
 const ALLOWED_FILE_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -74,14 +76,14 @@ function hex(buffer: ArrayBuffer) {
     .join('')
 }
 
-function safeAlign(value: FormDataEntryValue | null) {
+function safeAlign(value: string | File | null) {
   const clean = String(value || '').trim().toLowerCase()
   if (clean === 'left' || clean === 'esquerda') return 'left'
   if (clean === 'center' || clean === 'middle' || clean === 'centro' || clean === 'meio') return 'center'
   return 'right'
 }
 
-function safeWidth(value: FormDataEntryValue | null) {
+function safeWidth(value: string | File | null) {
   const parsed = Number.parseInt(String(value || ''), 10)
   if (!Number.isFinite(parsed)) return 260
   return Math.min(420, Math.max(120, parsed))
@@ -113,7 +115,7 @@ export async function onRequestGet({ request, env }: Context) {
   const url = new URL(request.url)
   const search = url.searchParams.get('q') || ''
   const limit = Number(url.searchParams.get('limit') || 80)
-  const files = await listUploads(env, { search, limit })
+  const files = await listUploads(env, { search, limit, offset: Math.max(0, Number(url.searchParams.get('offset')) || 0) })
 
   return json(files)
 }
@@ -126,7 +128,7 @@ export async function onRequestPost({ request, env }: Context) {
   if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('uploads de mídia foram desativados', 403)
 
   const contentLength = Number(request.headers.get('content-length') || 0)
-  if (contentLength > MAX_UPLOAD_BYTES) {
+  if (contentLength > MAX_REQUEST_BYTES) {
     return error(`o arquivo enviado excede o limite de ${formatBytes(MAX_UPLOAD_BYTES)}`, 413)
   }
 
@@ -148,6 +150,7 @@ export async function onRequestPost({ request, env }: Context) {
 
   const filename = ensureFilenameExtension(safeFilename(file.name || 'arquivo'), mimeType)
   const buffer = await file.arrayBuffer()
+  if (!matchesMediaType(buffer, mimeType)) return error('o conteúdo do arquivo não corresponde ao tipo informado', 415)
   const digest = hex(await crypto.subtle.digest('SHA-256', buffer))
   const now = new Date()
   const year = String(now.getUTCFullYear())
@@ -171,18 +174,28 @@ export async function onRequestPost({ request, env }: Context) {
   const preferredSlug = slugFromTitle(String(form.get('slug') || '').trim())
   const align = safeAlign(form.get('align'))
   const width = safeWidth(form.get('width'))
-  const upload = await recordUpload(env, {
-    r2Key,
-    filename,
-    mimeType,
-    sizeBytes: file.size,
-    sha256: digest,
-    uploadedByEmail: user.email,
-    description,
-    preferredSlug
-  })
+  let upload
+  try {
+    upload = await recordUpload(env, {
+      r2Key,
+      filename,
+      mimeType,
+      sizeBytes: file.size,
+      sha256: digest,
+      uploadedByEmail: user.email,
+      description,
+      preferredSlug
+    })
+  } catch (cause) {
+    const persisted = await env.DB!.prepare('SELECT id FROM uploads WHERE r2_key = ?').bind(r2Key).first().catch(() => undefined)
+    if (persisted === null) await env.WIKI_BUCKET.delete(r2Key).catch(() => undefined)
+    throw cause
+  }
 
-  if (!upload) return error('não foi possível registrar o arquivo enviado', 500)
+  if (!upload) {
+    await env.WIKI_BUCKET.delete(r2Key).catch(() => undefined)
+    return error('não foi possível registrar o arquivo enviado', 500)
+  }
 
   return json({
     ok: true,

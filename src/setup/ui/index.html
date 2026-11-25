@@ -50,6 +50,7 @@
           <label class="choice-card"><input type="radio" name="mode" value="configure" checked /><strong data-i18n="modeConfigure">Reconfigurar esta wiki</strong><span data-i18n="modeConfigureDesc">Preserve a instalação e altere identidade, recursos e Cloudflare.</span></label>
           <label class="choice-card"><input type="radio" name="mode" value="update" /><strong data-i18n="modeUpdate">Atualizar o WikiCambada Core</strong><span data-i18n="modeUpdateDesc">Aplique um pacote ZIP preservando a instalação.</span></label>
           <label class="choice-card"><input type="radio" name="mode" value="verify" /><strong data-i18n="modeVerify">Verificar instalação</strong><span data-i18n="modeVerifyDesc">Confira arquivos e configurações essenciais sem alterar o projeto.</span></label>
+          <label class="choice-card"><input type="radio" name="mode" value="migrate" /><strong data-i18n="modeMigrate">Migrar uma wiki legada</strong><span data-i18n="modeMigrateDesc">Migre uma instalação anterior à versão 1.1.0 para o WikiCambada Core.</span></label>
         </div>
       </section>
 
@@ -76,9 +77,9 @@
       <section class="step" data-step="branding" hidden>
         <h1 data-i18n="brandingTitle">Identidade visual</h1>
         <div class="branding-grid">
-          <label class="upload-card"><span data-i18n="logo">Logo principal</span><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" /><img id="logoPreview" alt="" /></label>
-          <label class="upload-card"><span data-i18n="logoDark">Logo para tema escuro</span><input id="logoDarkFile" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" /><img id="logoDarkPreview" alt="" /></label>
-          <label class="upload-card"><span data-i18n="favicon">Favicon</span><input id="faviconFile" type="file" accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml" /><img id="faviconPreview" alt="" /></label>
+          <label class="upload-card"><span data-i18n="logo">Logo principal</span><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp" /><img id="logoPreview" alt="" /></label>
+          <label class="upload-card"><span data-i18n="logoDark">Logo para tema escuro</span><input id="logoDarkFile" type="file" accept="image/png,image/jpeg,image/webp" /><img id="logoDarkPreview" alt="" /></label>
+          <label class="upload-card"><span data-i18n="favicon">Favicon</span><input id="faviconFile" type="file" accept="image/png,image/x-icon,image/vnd.microsoft.icon" /><img id="faviconPreview" alt="" /></label>
         </div>
         <div class="form-grid">
           <label><span data-i18n="accentColor">Cor principal</span><input id="accentColor" type="color" /></label>
@@ -114,7 +115,7 @@
           <label><span data-i18n="databaseName">Banco D1</span><input id="databaseName" /></label>
           <label><span data-i18n="bucketName">Bucket R2</span><input id="bucketName" /></label>
           <label><span data-i18n="superAdmin">Super administrador</span><input id="superAdminEmail" type="email" /></label>
-          <label><span data-i18n="accessMode">Acesso</span><select id="accessMode"><option value="cloudflare-access">Cloudflare Access</option><option value="public">Público</option></select></label>
+          <label><span data-i18n="accessMode">Acesso</span><select id="accessMode"><option value="cloudflare-access">Cloudflare Access</option><option value="public">Público</option><option value="private">Privado (Cloudflare Access)</option></select></label>
           <label><span data-i18n="updateChannel">Canal de atualização</span><select id="updateChannel"><option value="stable">Estável</option><option value="beta">Beta</option><option value="development">Desenvolvimento</option></select></label>
         </div>
         <p class="help" data-i18n="cloudflareHelp">IDs do D1 e credenciais do Access já existentes são preservados no wrangler.toml.</p>
@@ -133,6 +134,19 @@
         <pre class="log" id="updateLog"></pre>
       </section>
 
+      <section class="step" data-step="migrate" hidden>
+        <h1 data-i18n="modeMigrate">Migrar uma wiki legada</h1>
+        <form id="legacyMigrationForm">
+          <div class="form-grid">
+            <label><span data-i18n="legacySource">Caminho absoluto da pasta de origem</span><input id="legacySource" /></label>
+            <label><span data-i18n="legacyZip">Ou um ZIP da instalação</span><input type="file" id="legacyZip" accept=".zip,application/zip" /></label>
+            <label class="wide"><span data-i18n="legacyDestination">Caminho absoluto da nova pasta de destino</span><input id="legacyDestination" required /></label>
+          </div>
+          <button class="primary" id="runLegacyMigration" type="submit" data-i18n="runLegacyMigration">Migrar arquivos</button>
+        </form>
+        <pre class="log" id="legacyResult" aria-live="polite" hidden></pre>
+      </section>
+
       <section class="step" data-step="verify" hidden>
         <h1 data-i18n="verifyTitle">Verificação</h1>
         <button class="primary" id="runVerify" type="button" data-i18n="runVerify">Verificar instalação</button>
@@ -141,7 +155,7 @@
 
       <section class="step" data-step="complete" hidden>
         <h1 data-i18n="completeTitle">Concluído</h1>
-        <p data-i18n="completeText">A instalação foi configurada. Aplique a migration 0015 e faça o deploy quando estiver pronto.</p>
+        <p data-i18n="completeText">A instalação foi configurada. Aplique as migrations e faça o deploy quando estiver pronto.</p>
         <pre class="commands">npm install
 npm run db:migrations:apply:remote
 npm run deploy</pre>
@@ -150,6 +164,7 @@ npm run deploy</pre>
       <footer class="setup-actions">
         <button id="backButton" type="button" data-i18n="back">Voltar</button>
         <button class="primary" id="nextButton" type="button" data-i18n="continue">Continuar</button>
+        <button class="primary" id="closeButton" type="button" data-i18n="close" hidden>Fechar</button>
       </footer>
     </main>
   </div>

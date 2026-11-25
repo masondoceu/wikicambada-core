@@ -1,25 +1,26 @@
-name = "wikicambada-core"
+name = "heartbeat-wiki"
 compatibility_date = "2026-06-22"
-pages_build_output_dir = "."
+pages_build_output_dir = ".wikicambada/public"
 
 [vars]
-ACCESS_TEAM_DOMAIN = "https://masondoceu.cloudflareaccess.com"
-ACCESS_AUD = "4dc22569c0306be44d76040c0969519a2487867dcdd1152e1198103e09b66b10"
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
 ACCESS_STRICT = "true"
-PUBLIC_BASE_URL = "https://wiki.cambada.party"
-WIKI_SITE_NAME = "WikiCambada"
+WIKI_ACCESS_MODE = "public"
+PUBLIC_BASE_URL = "https://aboutheartbeat.pages.dev"
+WIKI_SITE_NAME = "Heartbeat Wiki"
 WIKI_SUPER_ADMIN_EMAIL = "mason@national.shitposting.agency"
-WIKI_CORE_VERSION = "v1.1.0 Beta"
-WIKI_FEATURES_JSON = "{\"search\":true,\"talkPages\":true,\"userPages\":true,\"publicSuggestions\":true,\"pageHistory\":true,\"mediaUploads\":true,\"templates\":true,\"categories\":true,\"randomPage\":true,\"coreBadge\":true,\"activityLogging\":true,\"specialPages\":{\"index\":true,\"version\":true,\"recentPages\":true,\"allPages\":true,\"categories\":true,\"randomPage\":true}}"
+WIKI_CORE_VERSION = "v1.1.0-r2"
+WIKI_FEATURES_JSON = "{\"search\":true,\"talkPages\":false,\"userPages\":false,\"publicSuggestions\":false,\"pageHistory\":true,\"mediaUploads\":true,\"templates\":true,\"categories\":true,\"randomPage\":false,\"coreBadge\":true,\"activityLogging\":true,\"specialPages\":{\"index\":true,\"version\":true,\"recentPages\":true,\"allPages\":true,\"categories\":true,\"randomPage\":false}}"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "wiki-cambada-party"
-database_id = "1de44703-ba51-4749-85e8-9a75c3f19713"
-preview_database_id = "1de44703-ba51-4749-85e8-9a75c3f19713"
+database_name = "heartbeat-wiki-d1"
+database_id = ""
+preview_database_id = ""
 migrations_dir = "src/data/migrations"
 migrations_table = "d1_migrations"
 
 [[r2_buckets]]
 binding = "WIKI_BUCKET"
-bucket_name = "wiki-cambada-party-uploads"
+bucket_name = "heartbeat-wiki-r2"

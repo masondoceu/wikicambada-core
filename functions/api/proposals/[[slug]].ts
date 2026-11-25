@@ -1,4 +1,4 @@
-import { createEditProposal, getActiveIpRule, globalSettingEnabled, hasDb, normalizeSlug, type Env } from '../_lib/d1'
+import { EditorialError, createEditProposal, getActiveIpRule, globalSettingEnabled, hasDb, normalizeSlug, type Env } from '../_lib/d1'
 import { notifyDiscordProposal } from '../_lib/discord'
 import { error, json } from '../_lib/response'
 
@@ -22,7 +22,7 @@ export async function onRequestPost({ request, env, params }: Context) {
     return error('este endereço IP não pode enviar sugestões no momento', 403)
   }
 
-  const input = await request.json().catch(() => null)
+  const input: any = await request.json().catch(() => null)
   if (!input || typeof input.title !== 'string' || typeof input.content !== 'string') {
     return error('payload inválido', 400)
   }
@@ -34,13 +34,13 @@ export async function onRequestPost({ request, env, params }: Context) {
 
     return json({
       ok: true,
-      proposal,
+      proposal: { id: proposal.id, status: proposal.status },
       stored: hasDb(env),
-      discord
+      discord: { sent: discord.sent }
     })
   } catch (exception) {
     const message = exception instanceof Error ? exception.message : 'erro interno'
-    const status = message.startsWith('edição recusada:') ? 400 : 500
-    return error(`não foi possível enviar a proposta: ${message}`, status)
+    const status = exception instanceof EditorialError ? exception.status : message.startsWith('edição recusada:') ? 400 : 500
+    return error(status < 500 ? `não foi possível enviar a proposta: ${message}` : 'não foi possível enviar a proposta', status)
   }
 }

@@ -47,3 +47,17 @@ Adiciona a base do Final Alpha: hierarquia interna de usuários, campos de lixei
 ### 0014_v1_0_13_redirects_files_version.sql
 
 Adiciona `target_fragment` aos redirecionamentos para destinos como `/wiki/pagina#secao`. A atualização também usa esse campo no novo gerenciador de aliases e redirecionamentos avançados.
+
+### 0015_v1_1_0_global_settings.sql
+
+Cria as configurações globais de recursos da instalação.
+
+### 0016_v1_1_0_write_guards.sql
+
+Adiciona guards usados dentro de `D1.batch()` para recusar gravações obsoletas sem aplicar etapas parciais, limites persistentes de propostas e fila de compensação de exclusões R2.
+
+### 0017_v1_1_0_recovery.sql
+
+Cria o estado de recuperação, inventário de objetos e controle dos blocos recebidos. Triggers fecham a escrita das tabelas do Core enquanto houver um backup ou uma restauração em andamento. O acesso temporário da restauração ocorre dentro do mesmo batch que grava os dados e volta a ser fechado antes do commit. O desbloqueio exige finalização validada ou abortamento explícito.
+
+Configurar ou atualizar arquivos não aplica migrations nem comprova seu estado remoto. O mínimo desta distribuição é 17; as migrations históricas não devem ser editadas para corrigir instalações existentes.

@@ -1,6 +1,7 @@
 {
   "managedBy": "WikiCambada Core setup",
-  "coreVersion": "1.1.0-beta",
+  "coreVersion": "1.1.0-r2",
   "configSchema": 1,
-  "databaseSchema": 15
+  "databaseSchema": 15,
+  "lastConfiguredAt": "2026-08-01T00:05:53.834394Z"
 }

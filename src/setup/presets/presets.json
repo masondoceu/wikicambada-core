@@ -1,7 +1,13 @@
 {
   "documentation": {
-    "name": {"pt-BR": "Documentação de software", "en": "Software documentation"},
-    "description": {"pt-BR": "Documentação pública com edição restrita", "en": "Public documentation with restricted editing"},
+    "name": {
+      "pt-BR": "Documentação de software",
+      "en": "Software documentation"
+    },
+    "description": {
+      "pt-BR": "Documentação pública com edição restrita",
+      "en": "Public documentation with restricted editing"
+    },
     "features": {
       "search": true,
       "talkPages": false,
@@ -14,12 +20,25 @@
       "randomPage": false,
       "coreBadge": true,
       "activityLogging": true,
-      "specialPages": {"index": true, "version": true, "recentPages": true, "allPages": true, "categories": true, "randomPage": false}
+      "specialPages": {
+        "index": true,
+        "version": true,
+        "recentPages": true,
+        "allPages": true,
+        "categories": true,
+        "randomPage": false
+      }
     }
   },
   "community": {
-    "name": {"pt-BR": "Wiki comunitária", "en": "Community wiki"},
-    "description": {"pt-BR": "Colaboração, discussões, usuários e propostas públicas", "en": "Collaboration, discussions, users and public proposals"},
+    "name": {
+      "pt-BR": "Wiki comunitária",
+      "en": "Community wiki"
+    },
+    "description": {
+      "pt-BR": "Colaboração, discussões, usuários e propostas públicas",
+      "en": "Collaboration, discussions, users and public proposals"
+    },
     "features": {
       "search": true,
       "talkPages": true,
@@ -32,12 +51,25 @@
       "randomPage": true,
       "coreBadge": true,
       "activityLogging": true,
-      "specialPages": {"index": true, "version": true, "recentPages": true, "allPages": true, "categories": true, "randomPage": true}
+      "specialPages": {
+        "index": true,
+        "version": true,
+        "recentPages": true,
+        "allPages": true,
+        "categories": true,
+        "randomPage": true
+      }
     }
   },
   "encyclopedia": {
-    "name": {"pt-BR": "Enciclopédia", "en": "Encyclopedia"},
-    "description": {"pt-BR": "Leitura pública e organização editorial completa", "en": "Public reading and complete editorial organization"},
+    "name": {
+      "pt-BR": "Enciclopédia",
+      "en": "Encyclopedia"
+    },
+    "description": {
+      "pt-BR": "Leitura pública e organização editorial completa",
+      "en": "Public reading and complete editorial organization"
+    },
     "features": {
       "search": true,
       "talkPages": true,
@@ -50,12 +82,25 @@
       "randomPage": true,
       "coreBadge": true,
       "activityLogging": true,
-      "specialPages": {"index": true, "version": true, "recentPages": true, "allPages": true, "categories": true, "randomPage": true}
+      "specialPages": {
+        "index": true,
+        "version": true,
+        "recentPages": true,
+        "allPages": true,
+        "categories": true,
+        "randomPage": true
+      }
     }
   },
   "private": {
-    "name": {"pt-BR": "Base de conhecimento privada", "en": "Private knowledge base"},
-    "description": {"pt-BR": "Leitura e edição controladas pelo Cloudflare Access", "en": "Reading and editing controlled by Cloudflare Access"},
+    "name": {
+      "pt-BR": "Base de conhecimento privada",
+      "en": "Private knowledge base"
+    },
+    "description": {
+      "pt-BR": "Leitura e edição controladas pelo Cloudflare Access",
+      "en": "Reading and editing controlled by Cloudflare Access"
+    },
     "features": {
       "search": true,
       "talkPages": false,
@@ -68,12 +113,28 @@
       "randomPage": false,
       "coreBadge": true,
       "activityLogging": true,
-      "specialPages": {"index": true, "version": true, "recentPages": true, "allPages": true, "categories": true, "randomPage": false}
+      "specialPages": {
+        "index": true,
+        "version": true,
+        "recentPages": true,
+        "allPages": true,
+        "categories": true,
+        "randomPage": false
+      }
+    },
+    "access": {
+      "mode": "private"
     }
   },
   "minimal": {
-    "name": {"pt-BR": "Instalação mínima", "en": "Minimal installation"},
-    "description": {"pt-BR": "Somente artigos, busca e histórico", "en": "Articles, search and history only"},
+    "name": {
+      "pt-BR": "Instalação mínima",
+      "en": "Minimal installation"
+    },
+    "description": {
+      "pt-BR": "Somente artigos, busca e histórico",
+      "en": "Articles, search and history only"
+    },
     "features": {
       "search": true,
       "talkPages": false,
@@ -86,12 +147,25 @@
       "randomPage": false,
       "coreBadge": true,
       "activityLogging": false,
-      "specialPages": {"index": true, "version": true, "recentPages": false, "allPages": true, "categories": false, "randomPage": false}
+      "specialPages": {
+        "index": true,
+        "version": true,
+        "recentPages": false,
+        "allPages": true,
+        "categories": false,
+        "randomPage": false
+      }
     }
   },
   "custom": {
-    "name": {"pt-BR": "Personalizada", "en": "Custom"},
-    "description": {"pt-BR": "Escolha cada recurso manualmente", "en": "Choose every feature manually"},
+    "name": {
+      "pt-BR": "Personalizada",
+      "en": "Custom"
+    },
+    "description": {
+      "pt-BR": "Escolha cada recurso manualmente",
+      "en": "Choose every feature manually"
+    },
     "features": {}
   }
 }

@@ -1,6 +1,6 @@
 import { requireAccessUser } from '../../_lib/access'
 import { globalSettingEnabled, hasDb, listContentTemplates, type Env } from '../../_lib/d1'
-import { error, json } from '../../_lib/response'
+import { error, failure, json } from '../../_lib/response'
 
 type Context = EventContext<Env, string, Record<string, never>>
 
@@ -13,7 +13,6 @@ export async function onRequestGet({ request, env }: Context) {
   try {
     return json(await listContentTemplates(env, { role: user.role || 'editor' }))
   } catch (exception) {
-    const message = exception instanceof Error ? exception.message : 'erro interno'
-    return error(message, 500)
+    return failure(exception)
   }
 }

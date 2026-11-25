@@ -1,4 +1,5 @@
 import { SITE_CONFIG, featureEnabled, loadGlobalSettings, loadSiteConfig } from './core/config.js'
+import { t } from './core/i18n.js'
 import { bootRandomIcon } from './random-icon.js'
 import { bootThemeControls } from './theme.js'
 
@@ -11,7 +12,8 @@ function escapeHtml(value) {
 }
 
 function navLink(item) {
-  const href = String(item?.href || '#')
+  const rawHref = String(item?.href || '')
+  const href = rawHref.startsWith('/') && !rawHref.startsWith('//') || /^https?:\/\//i.test(rawHref) ? rawHref : '#'
   const external = /^https?:\/\//i.test(href)
   const attributes = external ? ' rel="noreferrer"' : ''
   return `<a href="${escapeHtml(href)}"${attributes}>${escapeHtml(item?.label || href)}</a>`
@@ -30,34 +32,17 @@ function applyStaticNavigation() {
   })
 }
 
-function replaceSiteText() {
-  const replacements = [
-    ['A enciclopédia livre dos web-refugiados', SITE_CONFIG.site.tagline || ''],
-    ['WikiCambada', SITE_CONFIG.site.name || 'WikiCambada Core'],
-    ['suportewiki@cambada.party', SITE_CONFIG.site.supportEmail || '']
-  ]
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-  const nodes = []
-  while (walker.nextNode()) nodes.push(walker.currentNode)
-  nodes.forEach(node => {
-    if (node.parentElement?.closest('script, style')) return
-    let text = node.nodeValue || ''
-    replacements.forEach(([from, to]) => { text = text.replaceAll(from, to) })
-    node.nodeValue = text
-  })
-}
-
 function applyStaticLinks() {
   const aboutSlug = SITE_CONFIG.site.aboutSlug || ''
   const guideSlug = SITE_CONFIG.site.editGuideSlug || ''
   const homeSlug = SITE_CONFIG.site.homeSlug || 'pagina-principal'
   const supportEmail = SITE_CONFIG.site.supportEmail || ''
 
-  document.querySelectorAll('a[href="/wiki/sobre-a-wikicambada"]').forEach(link => {
+  document.querySelectorAll('[data-about-link]').forEach(link => {
     if (aboutSlug) link.href = `/wiki/${aboutSlug}`
     else link.hidden = true
   })
-  document.querySelectorAll('a[href="/wiki/como-editar"]').forEach(link => {
+  document.querySelectorAll('[data-edit-guide-link]').forEach(link => {
     if (guideSlug) link.href = `/wiki/${guideSlug}`
     else link.hidden = true
   })
@@ -65,7 +50,10 @@ function applyStaticLinks() {
     link.href = `/api/auth/login?return=${encodeURIComponent(`/edit/${homeSlug}`)}`
   })
   document.querySelectorAll('a[href^="mailto:"]').forEach(link => {
-    if (supportEmail) link.href = `mailto:${supportEmail}`
+    if (supportEmail) {
+      link.href = `mailto:${supportEmail}`
+      if (link.dataset.supportEmail !== undefined) link.textContent = supportEmail
+    }
     else link.hidden = true
   })
   document.querySelectorAll('.search-box').forEach(form => { form.hidden = !featureEnabled('search') })
@@ -75,9 +63,12 @@ export async function bootStaticPage() {
   bootThemeControls()
   await loadSiteConfig()
   await loadGlobalSettings()
-  const titlePrefix = document.title.split('—')[0].trim()
+  const titlePrefix = document.querySelector('[data-static-title]')?.textContent?.trim() || document.title.split('—')[0].trim()
   document.title = `${titlePrefix} — ${SITE_CONFIG.site.name || 'WikiCambada Core'}`
-  replaceSiteText()
+  document.querySelectorAll('[data-static-origin]').forEach(element => {
+    const tagline = SITE_CONFIG.site.tagline || ''
+    element.textContent = tagline ? t('static.origin', { site: SITE_CONFIG.site.name, tagline }) : SITE_CONFIG.site.name
+  })
   applyStaticNavigation()
   applyStaticLinks()
 

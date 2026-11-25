@@ -1,16 +1,18 @@
 import { readAccessUser } from '../_lib/access'
-import { hasDb, listPages, normalizeSlug, publicPageEnabled, readPage, type Env } from '../_lib/d1'
+import { hasDb, normalizeSlug, publicPageEnabled, readPage, type Env } from '../_lib/d1'
 import { createRevision } from '../_lib/revisions'
 import { error, json } from '../_lib/response'
+import { onRequestGet as listPageIndex } from './index'
 
 type Context = EventContext<Env, string, { slug?: string[] }>
 
-export async function onRequestGet({ env, params }: Context) {
+export async function onRequestGet(context: Context) {
+  const { env, params } = context
   const slug = normalizeSlug(params.slug)
   if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   if (!slug) {
-    return json(await listPages(env))
+    return listPageIndex(context)
   }
 
   if (!(await publicPageEnabled(env, slug))) return error('página indisponível nesta instalação', 403)

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f8f9fa" />
-  <title>Acesso bloqueado — WikiCambada</title>
+  <title>Acesso bloqueado — Minha Wiki</title>
   <link id="faviconIcon" rel="icon" type="image/png" data-random-favicon />
   <script>
     (() => {
@@ -44,50 +44,44 @@
     <aside class="wiki-sidebar" aria-label="Navegação lateral">
       <a class="brand" href="/">
         <img class="brand-globe" alt="" data-random-logo />
-        <span class="brand-wordmark">WikiCambada</span>
-        <span class="brand-subtitle">A enciclopédia livre dos web-refugiados</span>
+        <span class="brand-wordmark" data-site-name>Minha Wiki</span>
+        <span class="brand-subtitle" data-site-tagline>Uma wiki executada pelo WikiCambada Core</span>
       </a>
 
       <nav class="side-nav" aria-label="Menu principal">
-        <h2>Navegação</h2>
+        <h2 data-i18n="shell.navigation">Navegação</h2>
         <a href="/">Página principal</a>
-        <a href="/wiki/eventos-atuais">Eventos atuais</a>
-        <a href="/wiki/arquivo-cambada">Arquivo Cambada</a>
-        <a href="/wiki/pagina-aleatoria">Página aleatória</a>
       </nav>
 
       <nav class="side-nav settings-nav" aria-label="Configurações">
-        <h2>Configurações</h2>
+        <h2 data-i18n="shell.settings">Configurações</h2>
         <label class="theme-setting">
-          Tema
+          <span data-i18n="shell.theme">Tema</span>
           <select data-theme-control>
-            <option value="auto">Automático</option>
-            <option value="light">Branco</option>
-            <option value="dark">Preto</option>
+            <option value="auto" data-i18n="shell.theme.auto">Automático</option>
+            <option value="light" data-i18n="shell.theme.light">Branco</option>
+            <option value="dark" data-i18n="shell.theme.dark">Preto</option>
             <option value="oled">OLED</option>
           </select>
         </label>
         <label class="theme-setting">
-          Tamanho do texto
+          <span data-i18n="shell.textSize">Tamanho do texto</span>
           <select data-text-size-control>
-            <option value="small">Pequeno</option>
-            <option value="normal" selected>Normal</option>
-            <option value="large">Grande</option>
+            <option value="small" data-i18n="shell.textSize.small">Pequeno</option>
+            <option value="normal" data-i18n="shell.textSize.normal" selected>Normal</option>
+            <option value="large" data-i18n="shell.textSize.large">Grande</option>
           </select>
         </label>
       </nav>
 
       <nav class="side-nav" aria-label="Comunidade">
-        <h2>Comunidade</h2>
-        <a href="/wiki/sobre-a-wikicambada">Sobre a WikiCambada</a>
-        <a href="/wiki/como-editar">Como editar</a>
+        <h2 data-i18n="shell.community">Comunidade</h2>
+        <a href="/wiki/sobre" data-about-link>Sobre</a>
+        <a href="/wiki/como-editar" data-edit-guide-link data-i18n="static.howToEdit">Como editar</a>
       </nav>
 
       <nav class="side-nav" aria-label="Ferramentas">
-        <h2>Ferramentas</h2>
-        <a href="https://cambada.party/" rel="noreferrer">cambada.party</a>
-        <a href="https://chat.cambada.party/" rel="noreferrer">cambada.chat</a>
-        <a href="https://maconhanet.org/" rel="noreferrer">maconhanet.org</a>
+        <h2 data-i18n="shell.tools">Ferramentas</h2>
       </nav>
     </aside>
 
@@ -97,8 +91,8 @@
           <a class="mobile-brand" href="/">
             <img class="mobile-brand-icon" alt="" data-random-logo-mobile />
             <span>
-              <strong>WikiCambada</strong>
-              <small>A enciclopédia livre dos web-refugiados</small>
+              <strong data-site-name>Minha Wiki</strong>
+              <small data-site-tagline>Uma wiki executada pelo WikiCambada Core</small>
             </span>
           </a>
         </div>
@@ -107,32 +101,32 @@
           <label class="theme-setting mobile-theme-setting">
             Tema
             <select data-theme-control>
-              <option value="auto">Automático</option>
-              <option value="light">Branco</option>
-              <option value="dark">Preto</option>
+              <option value="auto" data-i18n="shell.theme.auto">Automático</option>
+              <option value="light" data-i18n="shell.theme.light">Branco</option>
+              <option value="dark" data-i18n="shell.theme.dark">Preto</option>
               <option value="oled">OLED</option>
             </select>
           </label>
         </div>
 
-        <nav class="personal-links" aria-label="Conta">
-          <a href="/wiki/como-editar">Quer editar?</a>
-          <a href="/api/auth/login?return=%2Fedit%2Fpagina-principal">Entrar</a>
+        <nav class="personal-links" aria-label="Conta" data-i18n-aria-label="shell.account">
+          <a href="/wiki/como-editar" data-edit-guide-link data-i18n="shell.wantToEdit">Quer editar?</a>
+          <a href="/api/auth/login?return=%2Fedit%2Fpagina-principal" data-i18n="shell.signIn">Entrar</a>
         </nav>
 
         <div class="tabs-row">
           <nav class="namespace-tabs" aria-label="Abas de namespace">
-            <a class="tab is-active" href="/">Sistema</a>
+            <a class="tab is-active" href="/" data-i18n="static.system">Sistema</a>
           </nav>
 
           <nav class="view-tabs" aria-label="Ações da página">
-            <a class="tab is-active" href="/">Ler</a>
+            <a class="tab is-active" href="/" data-i18n="shell.read">Ler</a>
           </nav>
 
           <form class="search-box" action="/search" role="search">
-            <label for="searchInput" class="sr-only">Pesquisar na WikiCambada</label>
-            <input id="searchInput" name="q" type="search" placeholder="Pesquisar na WikiCambada" autocomplete="off" />
-            <button type="submit" aria-label="Pesquisar">⌕</button>
+            <label for="searchInput" class="sr-only" data-i18n="shell.search">Pesquisar na wiki</label>
+            <input id="searchInput" name="q" type="search" placeholder="Pesquisar na wiki" data-i18n-placeholder="shell.search" autocomplete="off" />
+            <button type="submit" aria-label="Pesquisar" data-i18n-aria-label="shell.searchAction">⌕</button>
           </form>
         </div>
       </header>
@@ -140,42 +134,42 @@
       <section class="content-frame error-content" aria-live="polite">
         <article class="article-page system-error-page">
           <header class="article-header">
-            <h1>Acesso bloqueado</h1>
-            <p class="origin-line">Origem: WikiCambada — A enciclopédia livre dos web-refugiados</p>
+            <h1 data-static-title data-i18n="static.blocked.title">Acesso bloqueado</h1>
+            <p class="origin-line" data-static-origin>Origem: Minha Wiki — Uma wiki executada pelo WikiCambada Core</p>
           </header>
 
 
           <div class="wiki-messagebox wiki-messagebox-warning">
-            <strong>Olá.</strong>
-            <p>Seu acesso ao WikiCambada foi bloqueado pela administração devido à violação recorrente das políticas do site.</p>
+            <strong data-i18n="static.blocked.summary">O acesso a esta instalação foi bloqueado pela administração.</strong>
           </div>
 
           <div class="article-body">
-            <p>Após uma cuidadosa decisão, tomada após a análise de suas atividades recentes, restringe, por tempo indefinido, o seu endereço de IP de ler ou editar páginas, mover artigos ou interagir em páginas de discussão.</p>
-            <p>Isso pode acontecer por causa de (mas não limitado à):</p>
+            <p data-i18n="static.blocked.detail">A restrição pode impedir a leitura, a edição e a interação com páginas por tempo indeterminado.</p>
+            <p data-i18n="static.blocked.reasons">Entre os motivos possíveis estão:</p>
             <ul>
-              <li>Vandalismo recorrente;</li>
-              <li>Spam;</li>
-              <li>Endereço IP bloqueado por abuso;</li>
-              <li>Bloqueio regional;</li>
-              <li>Conduta maliciosa;</li>
-              <li>Scraping agressivo (não-respeito ao robots.txt);</li>
-              <li>Ataques de negação de serviço (DoS/DDoS);</li>
-              <li>Ataques de força bruta;</li>
-              <li>Injeção de código (XSS/SQLi);</li>
-              <li>Exploração de APIs;</li>
-              <li>Bots de spam automatizados;</li>
-              <li>Bloqueio por sinalização da Cloudflare.</li>
+              <li data-i18n="static.blocked.vandalism">vandalismo recorrente</li>
+              <li data-i18n="static.blocked.spam">spam</li>
+              <li data-i18n="static.blocked.abuse">abuso originado do endereço IP</li>
+              <li data-i18n="static.blocked.region">restrição regional</li>
+              <li data-i18n="static.blocked.malicious">conduta maliciosa</li>
+              <li data-i18n="static.blocked.scraping">coleta automatizada agressiva</li>
+              <li data-i18n="static.blocked.dos">ataques de negação de serviço</li>
+              <li data-i18n="static.blocked.bruteforce">ataques de força bruta</li>
+              <li data-i18n="static.blocked.injection">tentativas de injeção de código</li>
+              <li data-i18n="static.blocked.api">exploração abusiva de APIs</li>
+              <li data-i18n="static.blocked.bots">automação de spam</li>
+              <li data-i18n="static.blocked.cloudflare">sinalização de segurança da Cloudflare</li>
             </ul>
-            <p>Se você acredita que tenha sido bloqueado por engano, entre em contato conosco pelo e-mail <a href="mailto:suportewiki@cambada.party">suportewiki@cambada.party</a>.</p>
-            <p>Consulte a documentação ou entre em contato com o suporte da instalação para mais informações.</p>
-            <p>Agradecemos.<br />— Equipe WikiCambada.</p>
+            <p data-i18n="static.blocked.contact">Se você acredita que o bloqueio ocorreu por engano, entre em contato com o suporte da instalação.</p>
+            <p><a href="mailto:support@example.invalid" data-support-email>support@example.invalid</a></p>
+            <p data-i18n="static.blocked.close">Consulte a documentação da instalação para mais informações.</p>
+            <p data-i18n="static.blocked.signature">— Administração da instalação</p>
           </div>
 
           <div class="editor-actions error-actions">
-            <a class="button-link is-primary" href="/">Página principal</a>
-            <a class="button-link" href="/wiki/como-editar">Como editar</a>
-            <a class="button-link" href="mailto:suportewiki@cambada.party">Contato de suporte</a>
+            <a class="button-link is-primary" href="/" data-i18n="static.mainPage">Página principal</a>
+            <a class="button-link" href="/wiki/como-editar" data-edit-guide-link data-i18n="static.howToEdit">Como editar</a>
+            <a class="button-link" href="mailto:support@example.invalid" data-i18n="static.support">Contato de suporte</a>
           </div>
         </article>
       </section>

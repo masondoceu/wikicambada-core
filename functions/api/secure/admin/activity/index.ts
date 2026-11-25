@@ -7,7 +7,7 @@ type Context = EventContext<Env, string, Record<string, never>>
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('atividade restrita a moderadores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
   const url = new URL(request.url)
   return json({ ok: true, activity: await listRecentActivity(env, Number(url.searchParams.get('limit') || 100)) })
 }
@@ -15,7 +15,7 @@ export async function onRequestGet({ request, env }: Context) {
 export async function onRequestPost({ request, env }: Context) {
   const user = await requireRole(request, env, 'admin')
   if (!user) return error('atividade restrita a administradores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste beta', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
   const input = await request.json().catch(() => ({})) as { action?: string }
   if (String(input.action || '') !== 'clear') return error('ação inválida', 400)
   return json({ ok: true, result: await clearRecentActivity(env) })

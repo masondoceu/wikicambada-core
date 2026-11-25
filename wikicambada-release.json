@@ -1,25 +1,41 @@
 {
   "product": "WikiCambada Core",
-  "version": "1.1.0-beta",
-  "displayVersion": "v1.1.0 Beta",
-  "channel": "beta",
+  "version": "1.1.0-r2",
+  "displayVersion": "v1.1.0-r2",
+  "channel": "stable",
   "minimumUpgradeableVersion": "1.0.13",
   "configSchema": 1,
-  "databaseSchema": 15,
+  "databaseSchema": 17,
   "filesManifest": "wikicambada-files.json",
   "preservedPaths": [
     "src/config",
     "src/media/branding",
     "src/media/fonts",
     ".dev.vars",
-    "wrangler.toml"
+    "wrangler.toml",
+    "src/data/wiki-icons.json"
   ],
   "migrations": [
-    "src/data/migrations/0015_v1_1_0_global_settings.sql"
+    "src/data/migrations/0001_schema.sql",
+    "src/data/migrations/0002_edit_proposals.sql",
+    "src/data/migrations/0003_revision_metadata.sql",
+    "src/data/migrations/0004_aliases.sql",
+    "src/data/migrations/0005_uploads_metadata.sql",
+    "src/data/migrations/0006_admin_ip_rules.sql",
+    "src/data/migrations/0007_final_alpha_admin.sql",
+    "src/data/migrations/0008_discussions_users_templates.sql",
+    "src/data/migrations/0009_template_system_v2.sql",
+    "src/data/migrations/0010_v1_0_4_template_gallery_users.sql",
+    "src/data/migrations/0011_v1_0_6_infobox_template_metadata.sql",
+    "src/data/migrations/0012_v1_0_8_media_infobox_editor.sql",
+    "src/data/migrations/0013_v1_0_9_search_activity.sql",
+    "src/data/migrations/0014_v1_0_13_redirects_files_version.sql",
+    "src/data/migrations/0015_v1_1_0_global_settings.sql",
+    "src/data/migrations/0016_v1_1_0_write_guards.sql",
+    "src/data/migrations/0017_v1_1_0_recovery.sql"
   ],
   "requirements": {
-    "python": ">=3.11",
-    "node": ">=20",
+    "node": ">=22.13.0",
     "wrangler": ">=4"
   }
 }

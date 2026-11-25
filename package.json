@@ -1,17 +1,30 @@
 {
-  "name": "wikicambada-core",
-  "version": "1.1.0-beta",
+  "name": "heartbeat-wiki",
+  "version": "1.1.0-r2",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
-    "dev": "wrangler pages dev .",
-    "deploy": "wrangler pages deploy . --project-name wikicambada-core",
-    "db:migrations:apply:local": "wrangler d1 migrations apply wiki-cambada-party --local",
-    "db:migrations:apply:remote": "wrangler d1 migrations apply wiki-cambada-party --remote",
-    "setup": "python3 setup.py",
-    "verify": "python3 setup.py verify"
+    "build": "node src/scripts/build-public.mjs",
+    "predev": "npm run build",
+    "predeploy": "npm run build",
+    "dev": "node src/scripts/dev.mjs",
+    "deploy": "wrangler pages deploy .wikicambada/public --project-name heartbeat-wiki",
+    "db:migrations:apply:local": "wrangler d1 migrations apply heartbeat-wiki-d1 --local",
+    "db:migrations:apply:remote": "wrangler d1 migrations apply heartbeat-wiki-d1 --remote",
+    "test": "node src/scripts/test.mjs",
+    "typecheck": "tsc --pretty false",
+    "setup": "node setup.js",
+    "verify": "node setup.js verify"
   },
   "devDependencies": {
-    "wrangler": "latest"
+    "@cloudflare/workers-types": "5.20261009.1",
+    "smol-toml": "1.9.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.149.0",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1"
   }
 }

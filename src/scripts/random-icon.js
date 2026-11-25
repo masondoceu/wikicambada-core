@@ -1,4 +1,5 @@
 import { SITE_CONFIG } from './core/config.js'
+import { applyTheme } from './theme.js'
 
 function assetUrl(value, fallbackIcon) {
   const clean = String(value || '').trim()
@@ -40,19 +41,21 @@ function applyIcon(iconUrl) {
   logos.forEach(logo => {
     logo.src = iconUrl
     logo.dataset.currentIcon = iconUrl.split('/').pop() || ''
+    logo.dataset.currentIconUrl = iconUrl
   })
 
   if (favicon) favicon.href = iconUrl
 }
 
 export async function bootRandomIcon() {
-  const fallbackIcon = assetUrl(SITE_CONFIG.branding?.logo, '/src/media/images/wikicambada-logo.png')
+  const fallbackIcon = assetUrl(SITE_CONFIG.branding?.logo, '/src/media/images/core/cat-guard.png')
   const mobileIcon = assetUrl(SITE_CONFIG.branding?.logoMobile, fallbackIcon)
   let iconUrl = fallbackIcon
 
-  if (SITE_CONFIG.branding?.randomIcons !== false) {
+  const manifestPath = String(SITE_CONFIG.branding?.randomIconManifest || '').trim()
+  if (SITE_CONFIG.branding?.randomIcons === true && manifestPath) {
     try {
-      const manifestUrl = assetUrl(SITE_CONFIG.branding?.randomIconManifest, '/src/data/wiki-icons.json')
+      const manifestUrl = assetUrl(manifestPath, '')
       const manifest = await readManifest(manifestUrl)
       const icons = Array.isArray(manifest.icons) ? manifest.icons : []
       iconUrl = assetUrl(icons[pickIndex(icons.length)] || manifest.fallback || fallbackIcon, fallbackIcon)
@@ -63,6 +66,7 @@ export async function bootRandomIcon() {
 
   const loadedUrl = await preloadImage(iconUrl)
   applyIcon(loadedUrl || fallbackIcon)
-  document.querySelectorAll('[data-site-logo-mobile]').forEach(logo => { logo.src = mobileIcon })
+  document.querySelectorAll('[data-site-logo-mobile], [data-random-logo-mobile]').forEach(logo => { logo.src = mobileIcon; logo.dataset.currentIconUrl = mobileIcon })
+  applyTheme(document.documentElement.dataset.themeChoice)
   return loadedUrl || fallbackIcon
 }

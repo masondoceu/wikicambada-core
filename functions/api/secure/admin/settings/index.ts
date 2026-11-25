@@ -15,7 +15,7 @@ export async function onRequestPost({ request, env }: Context) {
   const user = await requireRole(request, env, 'admin')
   if (!user) return error('configurações globais restritas a administradores', 403)
   if (!hasDb(env)) return error('D1 ainda não foi ligado', 501)
-  const input = await request.json().catch(() => null) as any
+  const input: any = await request.json().catch(() => null) as any
   if (!input?.settings || typeof input.settings !== 'object') return error('configurações inválidas', 400)
   try {
     return json({ ok: true, ...(await saveGlobalSettings(env, input.settings, user.email || '')) })

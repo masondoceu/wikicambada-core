@@ -7,8 +7,8 @@ export type AccessUser = {
   name: string | null
   displayName?: string | null
   role?: UserRole | null
-  status?: 'active' | 'disabled' | null
-  access: 'cloudflare-access' | 'missing' | 'invalid'
+  status?: 'active' | 'disabled' | 'unavailable' | null
+  access: 'cloudflare-access' | 'development' | 'missing' | 'invalid'
   verified: boolean
 }
 
@@ -17,6 +17,9 @@ export type AccessEnv = {
   ACCESS_TEAM_DOMAIN?: string
   ACCESS_AUD?: string
   ACCESS_STRICT?: string
+  WIKI_DEV_AUTH?: string
+  DEV_BYPASS_AUTH?: string
+  WIKI_LOCAL_AUTH_SECRET?: string
   WIKI_SUPER_ADMIN_EMAIL?: string
 }
 
@@ -29,6 +32,7 @@ type JwtParts = {
 
 type JwksCache = {
   url: string
+  fetchedAt: number
   expiresAt: number
   keys: JsonWebKey[]
 }
@@ -60,7 +64,7 @@ export function normalizeRole(value: string | null | undefined): UserRole {
 }
 
 export function roleAtLeast(user: AccessUser | null | undefined, minimum: UserRole) {
-  if (!user?.authenticated || !user.email || user.status === 'disabled') return false
+  if (!user?.authenticated || !user.canEdit || !user.email || user.status !== 'active') return false
   const role = normalizeRole(user.role || 'editor')
   return roleOrder[role] >= roleOrder[minimum]
 }
@@ -115,8 +119,13 @@ function parseJwt(token: string): JwtParts | null {
 }
 
 function cleanTeamDomain(value: string | undefined) {
-  const domain = String(value || '').trim().replace(/\/+$/, '')
-  return domain || null
+  try {
+    const url = new URL(String(value || '').trim())
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null
+    return url.origin
+  } catch {
+    return null
+  }
 }
 
 function hasExpectedAudience(payload: Record<string, any>, expectedAudience: string) {
@@ -125,15 +134,15 @@ function hasExpectedAudience(payload: Record<string, any>, expectedAudience: str
   return aud === expectedAudience
 }
 
-async function fetchJwks(teamDomain: string) {
+async function fetchJwks(teamDomain: string, refresh = false) {
   const url = `${teamDomain}/cdn-cgi/access/certs`
   const now = Date.now()
 
-  if (jwksCache && jwksCache.url === url && jwksCache.expiresAt > now) {
+  if (jwksCache && jwksCache.url === url && jwksCache.expiresAt > now && (!refresh || now - jwksCache.fetchedAt < 30000)) {
     return jwksCache.keys
   }
 
-  const response = await fetch(url, { headers: { accept: 'application/json' } })
+  const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) })
   if (!response.ok) throw new Error('jwks indisponível')
 
   const data = await response.json() as { keys?: JsonWebKey[] }
@@ -141,6 +150,7 @@ async function fetchJwks(teamDomain: string) {
   jwksCache = {
     url,
     keys,
+    fetchedAt: now,
     expiresAt: now + 1000 * 60 * 30
   }
 
@@ -153,10 +163,11 @@ async function verifyJwt(token: string, env: AccessEnv) {
   if (!teamDomain || !audience) return null
 
   const parsed = parseJwt(token)
-  if (!parsed) return null
+  if (!parsed || parsed.header.alg !== 'RS256' || typeof parsed.header.kid !== 'string' || parsed.header.crit !== undefined || parsed.header.b64 === false) return null
 
   const keys = await fetchJwks(teamDomain)
-  const jwk = keys.find(key => (key as any).kid === parsed.header.kid)
+  const jwk = keys.find(key => (key as any).kid === parsed.header.kid) ||
+    (await fetchJwks(teamDomain, true)).find(key => (key as any).kid === parsed.header.kid)
   if (!jwk) return null
 
   const key = await crypto.subtle.importKey(
@@ -179,8 +190,9 @@ async function verifyJwt(token: string, env: AccessEnv) {
   const now = Math.floor(Date.now() / 1000)
   if (parsed.payload.iss !== teamDomain) return null
   if (!hasExpectedAudience(parsed.payload, audience)) return null
-  if (typeof parsed.payload.exp === 'number' && parsed.payload.exp <= now) return null
-  if (typeof parsed.payload.nbf === 'number' && parsed.payload.nbf > now) return null
+  if (!Number.isFinite(parsed.payload.exp) || parsed.payload.exp <= now) return null
+  if (parsed.payload.nbf !== undefined && (!Number.isFinite(parsed.payload.nbf) || parsed.payload.nbf > now)) return null
+  if (parsed.payload.iat !== undefined && (!Number.isFinite(parsed.payload.iat) || parsed.payload.iat > now + 30 || parsed.payload.iat >= parsed.payload.exp)) return null
 
   return parsed.payload
 }
@@ -188,8 +200,8 @@ async function verifyJwt(token: string, env: AccessEnv) {
 function baseUserFromPayload(payload: Record<string, any> | null, verified: boolean, env: AccessEnv): AccessUser | null {
   if (!payload) return null
 
-  const email = payload.email || payload.common_name || null
-  if (!email) return null
+  const email = payload.email
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null
 
   return {
     authenticated: true,
@@ -224,7 +236,8 @@ async function columnNames(db: D1Database, table: string) {
 }
 
 async function hydrateProfile(user: AccessUser, env: AccessEnv): Promise<AccessUser> {
-  if (!user.authenticated || !user.email || !env.DB) return user
+  if (!user.authenticated || !user.email) return user
+  if (!env.DB) return { ...user, canEdit: false, role: null, status: 'unavailable' }
 
   const email = normalizeEmail(user.email)
   const now = new Date().toISOString()
@@ -233,35 +246,28 @@ async function hydrateProfile(user: AccessUser, env: AccessEnv): Promise<AccessU
   try {
     const columns = await columnNames(env.DB, 'editor_profiles')
     const hasStatus = columns.has('status')
-    const hasSeen = columns.has('last_seen_at') && columns.has('last_seen_ip') && columns.has('last_seen_path') && columns.has('last_seen_user_agent')
-    const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
+    if (!hasStatus) return { ...user, canEdit: false, role: null, status: 'unavailable' }
+    let existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
 
     if (!existing) {
-      if (hasStatus) {
-        await env.DB.prepare(`
-          INSERT INTO editor_profiles (id, email, display_name, role, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'active', ?, ?)
-        `).bind(crypto.randomUUID(), email, user.name || null, desiredRole, now, now).run()
-      } else {
-        await env.DB.prepare(`
-          INSERT INTO editor_profiles (id, email, display_name, role, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).bind(crypto.randomUUID(), email, user.name || null, desiredRole, now, now).run()
-      }
-
-      return { ...user, email, displayName: user.name || null, role: desiredRole, status: 'active', canEdit: true }
+      await env.DB.prepare(`
+        INSERT INTO editor_profiles (id, email, display_name, role, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(email) DO NOTHING
+      `).bind(crypto.randomUUID(), email, user.name || null, desiredRole, now, now).run()
+      existing = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
+      if (!existing) return { ...user, email, role: null, status: 'unavailable', canEdit: false }
     }
 
     const role = email === superAdminEmail(env) ? 'super_admin' : normalizeRole(existing.role || 'editor')
-    const status = hasStatus ? String(existing.status || 'active') : 'active'
+    const status = String(existing.status || 'unavailable')
+    if (!['active', 'disabled'].includes(status) || (email !== superAdminEmail(env) && !Object.hasOwn(roleOrder, existing.role))) return { ...user, email, role: null, status: 'unavailable', canEdit: false }
     const displayName = existing.display_name || user.name || null
 
-    if (email === superAdminEmail(env) && existing.role !== 'super_admin') {
-      await env.DB.prepare('UPDATE editor_profiles SET role = ?, status = ?, updated_at = ? WHERE email = ?')
-        .bind('super_admin', 'active', now, email)
+    if (email === superAdminEmail(env) && existing.role !== 'super_admin' && status === 'active') {
+      const result = await env.DB.prepare('UPDATE editor_profiles SET role = ?, updated_at = ? WHERE email = ? AND status = ?')
+        .bind('super_admin', now, email, 'active')
         .run()
-    } else if (hasSeen) {
-      await env.DB.prepare('UPDATE editor_profiles SET updated_at = ? WHERE email = ?').bind(now, email).run()
+      if (result.meta.changes !== 1) return { ...user, email, role: null, status: 'unavailable', canEdit: false }
     }
 
     return {
@@ -270,11 +276,11 @@ async function hydrateProfile(user: AccessUser, env: AccessEnv): Promise<AccessU
       name: user.name,
       displayName,
       role,
-      status: status === 'disabled' ? 'disabled' : 'active',
-      canEdit: status !== 'disabled'
+      status: status === 'active' ? 'active' : 'disabled',
+      canEdit: status === 'active'
     }
   } catch {
-    return { ...user, email, role: desiredRole, status: 'active', canEdit: true }
+    return { ...user, email, role: null, status: 'unavailable', canEdit: false }
   }
 }
 
@@ -315,7 +321,29 @@ function accessTokenFromRequest(request: Request) {
   return accessCookieToken(request.headers.get('cookie'))
 }
 
+export async function readAccessIdentity(request: Request, env: AccessEnv) {
+  const local = await localDevelopmentIdentity(request, env)
+  if (local) return { authenticated: true, verified: false, development: true, email: local.email, name: local.name }
+  const token = accessTokenFromRequest(request)
+  const payload = token ? await verifyJwt(token, env).catch(() => null) : null
+  const user = baseUserFromPayload(payload, true, env)
+  return { authenticated: Boolean(user), verified: Boolean(user), development: false, email: user?.email || null, name: user?.name || null }
+}
+
+async function localDevelopmentIdentity(request: Request, env: AccessEnv) {
+  const url = new URL(request.url), proof = request.headers.get('x-wiki-local-auth') || ''
+  if (env.DEV_BYPASS_AUTH !== 'true' || !/^[a-f0-9]{64}$/.test(env.WIKI_LOCAL_AUTH_SECRET || '') || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return null
+  const [timestamp, signature] = proof.split('.')
+  if (!/^\d{13}$/.test(timestamp || '') || !/^[a-f0-9]{64}$/.test(signature || '') || Math.abs(Date.now() - Number(timestamp)) > 10000) return null
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.WIKI_LOCAL_AUTH_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+  const bytes = Uint8Array.from(signature.match(/../g)!, value => parseInt(value, 16))
+  if (!await crypto.subtle.verify('HMAC', key, bytes, new TextEncoder().encode(`${timestamp}\n${request.method}\n${url.pathname}${url.search}`))) return null
+  return { email: 'local-admin@wikicambada.invalid', name: 'Local admin' }
+}
+
 export async function readAccessUser(request: Request, env: AccessEnv = {}): Promise<AccessUser> {
+  const local = await localDevelopmentIdentity(request, env)
+  if (local) return hydrateProfile({ authenticated: true, canEdit: true, email: local.email, name: local.name, role: 'super_admin', status: 'active', access: 'development', verified: false }, { ...env, WIKI_SUPER_ADMIN_EMAIL: local.email })
   const token = accessTokenFromRequest(request)
   const emailHeader = request.headers.get('cf-access-authenticated-user-email')
 
@@ -328,6 +356,9 @@ export async function readAccessUser(request: Request, env: AccessEnv = {}): Pro
     return missingUser('invalid')
   }
 
+  const hostname = new URL(request.url).hostname
+  const development = env.WIKI_DEV_AUTH === 'true' && env.ACCESS_STRICT === 'false' && ['localhost', '127.0.0.1', '[::1]'].includes(hostname)
+  if (!development) return missingUser('invalid')
   const payload = token ? parseJwt(token)?.payload || null : null
   const email = emailHeader || payload?.email || payload?.common_name || null
 
@@ -341,25 +372,26 @@ export async function readAccessUser(request: Request, env: AccessEnv = {}): Pro
     displayName: payload?.name || payload?.given_name || null,
     role: normalizeEmail(email) === superAdminEmail(env) ? 'super_admin' : 'editor',
     status: 'active',
-    access: 'cloudflare-access',
+    access: 'development',
     verified: false
   }, env)
 }
 
-export async function requireAccessUser(request: Request, env: AccessEnv = {}) {
+export async function requireAccessUser(request: Request, env: AccessEnv = {}): Promise<(AccessUser & { email: string, canEdit: true, status: 'active' }) | null> {
   const user = await readAccessUser(request, env)
-  const strict = String(env.ACCESS_STRICT || '').toLowerCase() === 'true'
+  const strict = env.ACCESS_STRICT !== 'false'
 
   if (!user.authenticated || !user.email) return null
-  if (strict && !user.verified) return null
-  if (user.status === 'disabled') return null
+  if (strict && !user.verified && user.access !== 'development') return null
+  if (user.status === 'unavailable') throw Object.assign(new Error('armazenamento temporariamente indisponível'), { status: 503 })
+  if (!user.canEdit || user.status !== 'active') throw Object.assign(new Error('conta desativada'), { status: 403 })
 
-  return user
+  return { ...user, email: user.email, canEdit: true, status: 'active' }
 }
 
 export async function requireRole(request: Request, env: AccessEnv = {}, minimum: UserRole = 'editor') {
   const user = await requireAccessUser(request, env)
   if (!user) return null
-  if (!roleAtLeast(user, minimum)) return null
+  if (!roleAtLeast(user, minimum)) throw Object.assign(new Error('permissão insuficiente'), { status: 403 })
   return user
 }

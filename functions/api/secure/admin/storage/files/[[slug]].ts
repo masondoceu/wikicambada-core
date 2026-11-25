@@ -7,12 +7,12 @@ type Context = EventContext<Env, string, { slug?: string[] | string }>
 export async function onRequestPost({ request, env, params }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const slug = normalizeSlug(params.slug)
   if (!slug) return error('arquivo ausente', 400)
 
-  const input = await request.json().catch(() => null)
+  const input: any = await request.json().catch(() => null)
   const action = String(input?.action || '').trim()
 
   if (action === 'update') {
@@ -30,7 +30,7 @@ export async function onRequestPost({ request, env, params }: Context) {
 export async function onRequestDelete({ request, env, params }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const slug = normalizeSlug(params.slug)
   if (!slug) return error('arquivo ausente', 400)

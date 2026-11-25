@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "site": {
+    "name": "Minha Wiki",
+    "shortName": "Minha Wiki",
+    "tagline": "Uma wiki executada pelo WikiCambada Core",
+    "description": "Uma wiki executada pelo WikiCambada Core",
+    "language": "pt-BR",
+    "interfaceLanguage": "pt-BR",
+    "homeSlug": "pagina-principal",
+    "baseUrl": "",
+    "supportEmail": "",
+    "aboutSlug": "sobre",
+    "editGuideSlug": "como-editar",
+    "defaultCategory": ""
+  },
+  "branding": {
+    "logo": "/src/media/images/core/cat-guard.png",
+    "logoMobile": "/src/media/images/core/cat-guard.png",
+    "logoDark": "",
+    "favicon": "/src/media/images/core/cat-guard.png",
+    "coreIcon": "/src/media/images/core/cat-guard.png",
+    "coreWordmark": "/src/media/images/core/wikicambada-core-white.png",
+    "poweredByBadge": "/src/media/images/poweredby-wikicambada-core.png",
+    "randomIconManifest": "",
+    "randomIcons": false
+  },
+  "appearance": {
+    "accentColor": "#3366cc",
+    "defaultTheme": "auto",
+    "fonts": {
+      "interface": "system-ui, sans-serif",
+      "content": "Georgia, serif",
+      "monospace": "ui-monospace, monospace"
+    }
+  },
+  "features": {
+    "cloudflareBadge": true,
+    "builtWithCloudflareBadge": false
+  },
+  "navigation": {
+    "main": [
+      {
+        "label": "Página principal",
+        "href": "/",
+        "kind": "home"
+      },
+      {
+        "label": "Páginas especiais",
+        "href": "/wiki/especial",
+        "kind": "page",
+        "feature": "specialPages.index"
+      },
+      {
+        "label": "Página aleatória",
+        "href": "/wiki/especial/pagina-aleatoria",
+        "kind": "random",
+        "feature": "randomPage"
+      }
+    ],
+    "community": [
+      {
+        "label": "Sobre",
+        "href": "/wiki/sobre",
+        "kind": "page"
+      },
+      {
+        "label": "Como editar",
+        "href": "/wiki/como-editar",
+        "kind": "page"
+      }
+    ],
+    "external": []
+  },
+  "access": {
+    "mode": "cloudflare-access",
+    "superAdminEmail": "",
+    "strict": true
+  },
+  "cloudflare": {
+    "projectName": "my-wiki",
+    "databaseName": "my-wiki-db",
+    "bucketName": "my-wiki-uploads"
+  }
+}

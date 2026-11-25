@@ -1,31 +1,32 @@
 {
   "schemaVersion": 1,
   "site": {
-    "name": "WikiCambada",
-    "shortName": "WikiCambada",
-    "tagline": "A enciclopédia livre dos web-refugiados",
-    "description": "Wiki comunitária executada pelo WikiCambada Core",
-    "language": "pt-BR",
-    "interfaceLanguage": "pt-BR",
-    "homeSlug": "pagina-principal",
-    "baseUrl": "https://wiki.cambada.party",
-    "supportEmail": "suportewiki@cambada.party",
-    "aboutSlug": "sobre-a-wikicambada",
-    "editGuideSlug": "como-editar",
-    "defaultCategory": "WikiCambada"
+    "name": "Heartbeat Wiki",
+    "shortName": "Heartbeat",
+    "tagline": "The Heartbeat software documentation",
+    "description": "The Heartbeat software documentation",
+    "language": "en",
+    "interfaceLanguage": "en",
+    "homeSlug": "main-page",
+    "baseUrl": "https://aboutheartbeat.pages.dev",
+    "supportEmail": "mason@cambada.party",
+    "aboutSlug": "about",
+    "editGuideSlug": "editing-guide",
+    "defaultCategory": "Heartbeat"
   },
   "branding": {
-    "logo": "/src/media/images/wikicambada-logo.png",
-    "logoMobile": "/src/media/images/wikicambada-logo.png",
-    "favicon": "/src/media/images/favicon.png",
+    "logo": "/src/media/branding/logo.png",
+    "logoMobile": "/src/media/branding/logo.png",
+    "favicon": "/src/media/branding/favicon.png",
     "coreIcon": "/src/media/images/core/cat-guard.png",
     "coreWordmark": "/src/media/images/core/wikicambada-core-white.png",
     "poweredByBadge": "/src/media/images/poweredby-wikicambada-core.png",
-    "randomIconManifest": "/src/data/wiki-icons.json",
-    "randomIcons": true
+    "randomIconManifest": "",
+    "randomIcons": false,
+    "logoDark": "/src/media/branding/logo-dark.png"
   },
   "appearance": {
-    "accentColor": "#3366cc",
+    "accentColor": "#f72e4c",
     "defaultTheme": "auto",
     "fonts": {
       "interface": "system-ui, sans-serif",
@@ -35,14 +36,14 @@
   },
   "features": {
     "search": true,
-    "talkPages": true,
-    "userPages": true,
-    "publicSuggestions": true,
+    "talkPages": false,
+    "userPages": false,
+    "publicSuggestions": false,
     "pageHistory": true,
     "mediaUploads": true,
     "templates": true,
     "categories": true,
-    "randomPage": true,
+    "randomPage": false,
     "coreBadge": true,
     "activityLogging": true,
     "specialPages": {
@@ -51,35 +52,51 @@
       "recentPages": true,
       "allPages": true,
       "categories": true,
-      "randomPage": true
+      "randomPage": false
     }
   },
   "navigation": {
     "main": [
-      { "label": "Página principal", "href": "/", "kind": "home" },
-      { "label": "Eventos atuais", "href": "/wiki/eventos-atuais", "kind": "page" },
-      { "label": "Arquivo Cambada", "href": "/wiki/arquivo-cambada", "kind": "page" },
-      { "label": "Páginas especiais", "href": "/wiki/especial", "kind": "page", "feature": "specialPages.index" },
-      { "label": "Página aleatória", "href": "/wiki/especial/pagina-aleatoria", "kind": "random", "feature": "randomPage" }
+      {
+        "label": "Main page",
+        "href": "/",
+        "kind": "home"
+      },
+      {
+        "label": "Special pages",
+        "href": "/wiki/especial",
+        "kind": "page",
+        "feature": "specialPages.index"
+      },
+      {
+        "label": "Random page",
+        "href": "/wiki/especial/pagina-aleatoria",
+        "kind": "random",
+        "feature": "randomPage"
+      }
     ],
     "community": [
-      { "label": "Sobre a WikiCambada", "href": "/wiki/sobre-a-wikicambada", "kind": "page" },
-      { "label": "Como editar", "href": "/wiki/como-editar", "kind": "page" }
+      {
+        "label": "About",
+        "href": "/wiki/about",
+        "kind": "page"
+      },
+      {
+        "label": "How to edit",
+        "href": "/wiki/editing-guide",
+        "kind": "page"
+      }
     ],
-    "external": [
-      { "label": "cambada.party", "href": "https://cambada.party/" },
-      { "label": "cambada.chat", "href": "https://chat.cambada.party/" },
-      { "label": "maconhanet.org", "href": "https://maconhanet.org/" }
-    ]
+    "external": []
   },
   "access": {
-    "mode": "cloudflare-access",
+    "mode": "public",
     "superAdminEmail": "mason@national.shitposting.agency",
     "strict": true
   },
   "cloudflare": {
-    "projectName": "wikicambada-core",
-    "databaseName": "wiki-cambada-party",
-    "bucketName": "wiki-cambada-party-uploads"
+    "projectName": "heartbeat-wiki",
+    "databaseName": "heartbeat-wiki-d1",
+    "bucketName": "heartbeat-wiki-r2"
   }
 }

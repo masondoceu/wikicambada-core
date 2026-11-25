@@ -11,7 +11,7 @@ function cleanId(value: string[] | string | undefined) {
 export async function onRequestDelete({ request, env, params }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const id = cleanId(params.id)
   if (!id) return error('regra ausente', 400)

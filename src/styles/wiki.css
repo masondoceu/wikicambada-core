@@ -50,7 +50,7 @@
   --diff-new: #f0fff4;
   --red-link: #ba0000;
   --serif: Georgia, 'Times New Roman', Times, serif;
-  --sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sans: var(--site-font-interface, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
 }
 
 
@@ -63,7 +63,7 @@ html[data-font="mactype"] {
 }
 
 html[data-font="classic"] {
-  --sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sans: var(--site-font-interface, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   --serif: Georgia, 'Times New Roman', Times, serif;
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
@@ -983,12 +983,42 @@ a:focus {
 
 .footer-poweredby-list {
   display: flex;
+  flex-wrap: wrap;
   flex: 0 0 auto;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.footer-poweredby-list > li {
+  display: flex;
+  align-items: center;
+}
+
+.footer-cloudflare-item {
+  min-width: 0;
+}
+
+.footer-cloudflare-link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.footer-cloudflare-badge {
+  display: block;
+  width: 121px;
+  max-width: 100%;
+  height: auto;
+  max-height: 42px;
+  object-fit: contain;
+}
+
+.footer-cloudflare-built {
+  width: 184px;
 }
 
 .footer-poweredby-badge {
@@ -4059,11 +4089,9 @@ img {
   }
 }
 
-/* v1.1.0 beta */
+/* v1.1.0-r2 */
 :root {
   --site-accent: #3366cc;
-  --site-font-interface: system-ui, sans-serif;
-  --site-font-content: Georgia, serif;
   --site-font-mono: ui-monospace, monospace;
 }
 
@@ -4072,11 +4100,11 @@ button,
 input,
 select,
 textarea {
-  font-family: var(--site-font-interface);
+  font-family: var(--sans);
 }
 
 .article-body {
-  font-family: var(--site-font-content);
+  font-family: var(--site-font-content, var(--sans));
 }
 
 code,

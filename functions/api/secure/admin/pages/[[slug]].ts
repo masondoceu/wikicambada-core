@@ -1,6 +1,6 @@
 import { requireRole } from '../../../_lib/access'
 import { deletePage, hasDb, normalizeSlug, renamePage, setPageLock, type Env } from '../../../_lib/d1'
-import { error, json } from '../../../_lib/response'
+import { error, failure, json } from '../../../_lib/response'
 
 type Context = EventContext<Env, string, { slug?: string[] | string }>
 
@@ -10,9 +10,9 @@ export async function onRequestPost({ request, env, params }: Context) {
 
   const user = await requireRole(request, env, 'admin')
   if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
-  const input = await request.json().catch(() => null)
+  const input: any = await request.json().catch(() => null)
   const action = String(input?.action || '').trim()
 
   try {
@@ -46,8 +46,7 @@ export async function onRequestPost({ request, env, params }: Context) {
 
     return error('ação inválida', 400)
   } catch (exception) {
-    const message = exception instanceof Error ? exception.message : 'erro interno'
-    return error(message, 500)
+    return failure(exception)
   }
 }
 
@@ -57,7 +56,7 @@ export async function onRequestDelete({ request, env, params }: Context) {
 
   const user = await requireRole(request, env, 'admin')
   if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const result = await deletePage(env, slug, user.email)
   if (!result) return error('página não encontrada', 404)

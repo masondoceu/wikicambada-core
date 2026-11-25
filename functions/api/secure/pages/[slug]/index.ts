@@ -10,7 +10,7 @@ export async function onRequestDelete({ request, env, params }: Context) {
 
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('exclusão restrita a moderadores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   try {
     const result = await deletePage(env, slug, user.email)

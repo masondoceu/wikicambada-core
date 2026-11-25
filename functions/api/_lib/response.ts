@@ -5,5 +5,10 @@ export function json(data: unknown, init: ResponseInit = {}) {
 }
 
 export function error(message: string, status = 400) {
-  return json({ ok: false, error: message }, { status })
+  return json({ ok: false, error: status >= 500 ? 'serviço temporariamente indisponível' : message }, { status })
+}
+
+export function failure(exception: unknown) {
+  const status = exception instanceof Error && 'status' in exception ? Number(exception.status) : 500
+  return error(exception instanceof Error ? exception.message : 'erro interno', status >= 400 && status <= 599 ? status : 500)
 }

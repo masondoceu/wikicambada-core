@@ -7,7 +7,7 @@ type Context = EventContext<Env, string, Record<string, never>>
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   return json(await maintenanceReport(env))
 }

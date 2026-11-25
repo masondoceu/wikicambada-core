@@ -1,3 +1,4 @@
+import { SITE_CONFIG, siteLogo } from './core/config.js'
 const THEME_KEY = 'wikicambada.theme'
 const FONT_KEY = 'wikicambada.font'
 const TEXT_SIZE_KEY = 'wikicambada.textSize'
@@ -40,7 +41,7 @@ function writeStored(key, value, fallback, choices) {
 }
 
 function readChoice() {
-  return readStored(THEME_KEY, FALLBACK_CHOICE, CHOICES)
+  return readStored(THEME_KEY, CHOICES.has(SITE_CONFIG.appearance?.defaultTheme) ? SITE_CONFIG.appearance.defaultTheme : FALLBACK_CHOICE, CHOICES)
 }
 
 function readFontChoice() {
@@ -78,6 +79,8 @@ export function applyTheme(choice = readChoice(), options = {}) {
 
   document.documentElement.dataset.themeChoice = nextChoice
   document.documentElement.dataset.theme = nextTheme
+  document.querySelectorAll('[data-site-logo], [data-random-logo]').forEach(element => { element.src = siteLogo(false, element.dataset.currentIconUrl) })
+  document.querySelectorAll('[data-site-logo-mobile], [data-random-logo-mobile]').forEach(element => { element.src = siteLogo(true, element.dataset.currentIconUrl) })
 
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.content = themeColor(nextTheme)

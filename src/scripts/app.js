@@ -22,12 +22,12 @@ function setReady() {
 
 async function boot() {
   await loadSiteConfig()
-  await loadGlobalSettings()
   bootThemeControls()
   bootMediaViewer()
   const router = createWikiRouter({ app, searchForm, searchInput })
 
   try {
+    await loadGlobalSettings()
     await bootRandomIcon()
     await router.boot()
   } catch (error) {

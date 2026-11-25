@@ -7,7 +7,7 @@ type Context = EventContext<Env, string, Record<string, never>>
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('lixeira restrita a moderadores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
   await purgeExpiredTrash(env).catch(() => null)
   return json({ ok: true, trash: await listTrash(env) })
 }
@@ -15,7 +15,7 @@ export async function onRequestGet({ request, env }: Context) {
 export async function onRequestPost({ request, env }: Context) {
   const user = await requireRole(request, env, 'moderator')
   if (!user) return error('lixeira restrita a moderadores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
   const input = await request.json().catch(() => ({})) as { action?: string, kind?: string, slug?: string }
   const action = String(input.action || '')
   const kind = String(input.kind || '')

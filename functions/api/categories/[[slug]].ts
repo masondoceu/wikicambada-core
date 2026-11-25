@@ -5,7 +5,7 @@ type Context = EventContext<Env, string, { slug?: string[] }>
 
 export async function onRequestGet({ env, params }: Context) {
   if (!(await globalSettingEnabled(env, 'categories'))) return error('categorias foram desativadas', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const slug = normalizeSlug(params.slug)
   if (!slug) return json(await listCategories(env))

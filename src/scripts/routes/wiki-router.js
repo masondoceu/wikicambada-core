@@ -1,8 +1,11 @@
 import { DEFAULT_RANDOM_SLUGS, HOME_SLUG, SLOGAN, SITE_CONFIG, SITE_NAME, featureEnabled, loadGlobalSettings } from '../core/config.js'
+import { interfaceLanguage, interfaceLocale, t } from '../core/i18n.js'
 import { articleSlugFromTalk, escapeHtml, normalizeKey, pageUrl, parseRoute, searchUrl, slugify, titleFromSlug } from '../core/utils.js'
-import { adminPageAction, clearRecentActivity, createIpRule, deleteAdminTemplate, deleteAdminUser, deleteAdvancedAlias, deleteAdvancedRedirect, deleteIpRule, deletePage, deleteStoredFile, forceSystemAction, getAdminGlobalSettings, getAdminUsers, getAdvancedRedirects, getCategory, getCurrentUser, getFile, getMaintenanceReport, getPage, getPageFresh, getRandomPage, getRecentActivity, getRevision, getStorageOverview, getSystemStatus, getTrash, importSeedBackup, listAdminPages, listAdminTemplates, listCategories, listFiles, listIpRules, listPages, listProposals, listRevisions, listTemplates, moderateProposal, restoreRevision, saveAdvancedAlias, saveAdvancedRedirect, saveAdminGlobalSettings, savePage, saveAdminTemplate, searchPages, submitEditProposal, trashAction, updateAdminUser, updateProfile, updateStoredFile, uploadImage } from '../services/wiki-api.js'
+import { adminPageAction, clearPublicCache, clearRecentActivity, createIpRule, deleteAdminTemplate, deleteAdminUser, deleteAdvancedAlias, deleteAdvancedRedirect, deleteIpRule, deletePage, deleteStoredFile, forceSystemAction, getAdminGlobalSettings, getAdminUsers, getAdvancedRedirects, getCategory, getCurrentUser, getFile, getMaintenanceReport, getPage, getPageFresh, getPageList, lookupPages, getRandomPage, getRecentActivity, getRevision, getSearchPage, getStorageOverview, getSystemStatus, getTrash, importSeedBackup, listAdminPages, listAdminTemplates, listCategories, listFiles, listIpRules, listPages, listProposals, listRevisions, listTemplates, moderateProposal, restoreRevision, saveAdvancedAlias, saveAdvancedRedirect, saveAdminGlobalSettings, savePage, saveAdminTemplate, searchPages, submitEditProposal, trashAction, updateAdminUser, updateProfile, updateStoredFile, uploadImage } from '../services/wiki-api.js'
 import { markdownToHtml } from '../renderers/wiki-markdown.js'
 import { accessRequiredHtml, adminActivityHtml, adminBackupHtml, adminDashboardHtml, adminIpHtml, adminMaintenanceHtml, adminPagesHtml, adminProposalsHtml, adminRedirectsHtml, adminStorageHtml, adminSystemHtml, adminSettingsHtml, adminTemplatesHtml, adminTrashHtml, adminUsersHtml, allPagesHtml, articleHtml, categoriesIndexHtml, categoryPageHtml, editorPreviewHtml, fatalErrorHtml, featureDisabledHtml, fileNamespaceBlockedHtml, filePageHtml, fileUploadPageHtml, historyHtml, notFoundHtml, proposalSubmittedHtml, recentPagesHtml, revisionCompareHtml, revisionHtml, searchHtml, setDocumentTitle, specialPagesIndexHtml, versionPageHtml } from '../renderers/wiki-renderer.js'
+
+const ui = (portuguese, english) => interfaceLanguage() === 'en' ? english : portuguese
 
 export function createWikiRouter({ app, searchForm, searchInput }) {
 
@@ -59,11 +62,15 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     return true
   }
 
+  function editGuideSlug() {
+    return SITE_CONFIG.site.editGuideSlug || (interfaceLocale() === 'en-US' ? 'editing-guide' : 'como-editar')
+  }
+
   function canonicalizeSpecialRoute(info) {
     if (!info) return
     const current = currentState()
     if (current.mode !== 'read' || current.slug === info.canonical) return
-    history.replaceState(null, '', pageUrl(info.canonical))
+    history.replaceState(history.state, '', pageUrl(info.canonical))
   }
 
 
@@ -186,9 +193,34 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     return serial === routeSerial
   }
 
+  const scrollPositions = new Map()
+  let displayedEntry, displayedPath, pendingScroll
+  const pathAndQuery = () => window.location.pathname + window.location.search
+
+  function currentEntry() {
+    if (!history.state?.wikiEntry) history.replaceState({ ...history.state, wikiEntry: crypto.randomUUID() }, '')
+    return history.state.wikiEntry
+  }
+
+  function rememberScroll() {
+    if (displayedEntry) scrollPositions.set(displayedEntry, window.scrollY)
+  }
+
+  function positionPage(top) {
+    displayedEntry = currentEntry()
+    displayedPath = pathAndQuery()
+    if (top !== undefined) window.scrollTo({ top, left: 0, behavior: 'instant' })
+    else if (!scrollToCurrentHash()) window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+    rememberScroll()
+  }
+
   function commitHtml(serial, html) {
     if (!isCurrentRoute(serial)) return false
     app.innerHTML = html
+    if (pendingScroll?.serial === serial) {
+      positionPage(pendingScroll.top)
+      pendingScroll = null
+    }
     return true
   }
 
@@ -202,9 +234,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const target = document.getElementById(id)
     if (!target) return false
 
-    requestAnimationFrame(() => {
-      target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' })
-    })
+    target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' })
     return true
   }
 
@@ -227,16 +257,17 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     return collectKnownSlugs(pages)
   }
 
-  async function markMissingArticleLinks(serial, pageSlugs = null) {
+  async function markMissingArticleLinks(serial) {
     if (!isCurrentRoute(serial)) return
-    const slugs = pageSlugs || await currentPageSlugSet()
+    const links = Array.from(app.querySelectorAll('.article-body a[data-link="page"]'))
+    const slugs = await lookupPages(Array.from(new Set(links.map(link => link.dataset.slug).filter(Boolean))))
     if (!isCurrentRoute(serial)) return
 
     app.querySelectorAll('.article-body a[data-link="page"]').forEach(link => {
       const slug = link.dataset.slug
       if (!slug || slug === HOME_SLUG || slug.startsWith('arquivo/') || slugs.has(slug)) return
       link.classList.add('red-link')
-      link.setAttribute('title', 'página ainda não existe')
+      link.setAttribute('title', interfaceLocale() === 'en-US' ? 'page does not exist yet' : ui("página ainda não existe", "page does not exist yet"))
     })
   }
 
@@ -267,12 +298,12 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
     account.innerHTML = currentUser.authenticated
       ? `
-        <span class="account-user">${escapeHtml(currentUser.displayName || currentUser.email || 'editor autorizado')} ${currentUser.role ? `<small>${escapeHtml(currentUser.role)}</small>` : ''}</span>
-        <a href="${escapeHtml(logoutUrl)}">Sair</a>
+        <span class="account-user">${escapeHtml(currentUser.displayName || currentUser.email || t('shell.authorizedEditor'))} ${currentUser.role ? `<small>${escapeHtml(currentUser.role)}</small>` : ''}</span>
+        <a href="${escapeHtml(logoutUrl)}">${escapeHtml(t('shell.signOut'))}</a>
       `
       : `
-        <a href="${pageUrl('como-editar')}" data-link="page" data-slug="como-editar">Quer editar?</a>
-        <a href="${escapeHtml(loginUrl)}">Entrar</a>
+        <a href="${pageUrl(editGuideSlug())}" data-link="page" data-slug="${escapeHtml(editGuideSlug())}">${escapeHtml(t('shell.wantToEdit'))}</a>
+        <a href="${escapeHtml(loginUrl)}">${escapeHtml(t('shell.signIn'))}</a>
       `
   }
 
@@ -309,7 +340,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const suggestTab = document.querySelector('[data-chrome-link="suggest-tab"]')
     const historyTab = document.querySelector('[data-chrome-link="history-tab"]')
 
-    if (articleTab) articleTab.textContent = isFile ? 'Arquivo' : isSpecial ? 'Especial' : 'Artigo'
+    if (articleTab) articleTab.textContent = isFile ? t('shell.file') : isSpecial ? t('shell.special') : t('shell.article')
     setVisible(talkTab, !isRestrictedNamespace && featureEnabled('talkPages'))
     setVisible(talkTool, !isRestrictedNamespace && featureEnabled('talkPages'))
     setVisible(editTool, canEdit && !isRestrictedNamespace)
@@ -342,7 +373,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const numberB = Number(b.replace?.(/\./g, '').replace?.(',', '.') ?? b)
     const numeric = a !== '' && b !== '' && Number.isFinite(numberA) && Number.isFinite(numberB)
     if (numeric) return numberA - numberB
-    return String(a).localeCompare(String(b), 'pt-BR', { numeric: true, sensitivity: 'base' })
+    return String(a).localeCompare(String(b), interfaceLocale(), { numeric: true, sensitivity: 'base' })
   }
 
   function enhanceAdminDataTables() {
@@ -370,7 +401,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       controls.className = 'admin-table-controls'
       controls.innerHTML = `
         <label>
-          Itens por página
+          ${ui("Itens por página", "Items per page")}
           <select data-admin-page-size>
             <option value="10" selected>10</option>
             <option value="25">25</option>
@@ -384,9 +415,9 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       const pager = document.createElement('div')
       pager.className = 'admin-table-pager'
       pager.innerHTML = `
-        <button class="secondary-button compact-button" type="button" data-admin-page-prev>Anterior</button>
+        <button class="secondary-button compact-button" type="button" data-admin-page-prev>${ui("Anterior", "Previous")}</button>
         <span data-admin-page-indicator></span>
-        <button class="secondary-button compact-button" type="button" data-admin-page-next>Próxima</button>
+        <button class="secondary-button compact-button" type="button" data-admin-page-next>${ui("Próxima", "Next")}</button>
       `
 
       table.before(controls)
@@ -417,18 +448,18 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const end = start + state.perPage
         const visible = rowsToShow.slice(start, end)
         tbody.replaceChildren(...visible)
-        if (status) status.textContent = `${rowsToShow.length.toLocaleString('pt-BR')} item(ns)`
-        if (indicator) indicator.textContent = `Página ${state.page.toLocaleString('pt-BR')} de ${pageCount.toLocaleString('pt-BR')}`
+        if (status) status.textContent = `${rowsToShow.length.toLocaleString(interfaceLocale())} item(ns)`
+        if (indicator) indicator.textContent = `${ui("Página ", "Page ")}${state.page.toLocaleString(interfaceLocale())} de ${pageCount.toLocaleString(interfaceLocale())}`
         if (previous) previous.disabled = state.page <= 1
         if (next) next.disabled = state.page >= pageCount
       }
 
       table.tHead?.querySelectorAll('th').forEach((header, columnIndex) => {
         const label = header.textContent.trim().toLowerCase()
-        if (!label || label === 'ações') return
+        if (!label || label === ui("ações", "actions")) return
         header.classList.add('admin-sortable-heading')
         header.tabIndex = 0
-        header.title = 'Ordenar coluna'
+        header.title = ui("Ordenar coluna", "Sort column")
 
         function activateSort() {
           if (state.sortIndex === columnIndex) {
@@ -463,34 +494,34 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     })
   }
 
-  async function renderContext() {
-    const [pages, categories, templates] = await Promise.all([
-      listPages({ limit: 1000 }),
-      featureEnabled('categories') ? listCategories() : Promise.resolve([]),
-      featureEnabled('templates') ? listTemplates({ secure: Boolean(currentUser.canEdit) }).catch(() => []) : Promise.resolve([])
-    ])
-    const visiblePages = pages.filter(pageVisibleByFeatures)
-    const pageSlugs = collectKnownSlugs(visiblePages)
-    for (const category of categories || []) {
-      if (category.slug) pageSlugs.add(`categoria/${category.slug}`)
-    }
+  function paginationHtml(previous, next, prefix = 'pages') {
+    if (!previous && !next) return ''
+    return `<nav><button class="secondary-button" data-${prefix}-prev ${previous ? '' : 'disabled'}>${escapeHtml(t('common.previous'))}</button> <button class="secondary-button" data-${prefix}-next ${next ? '' : 'disabled'}>${escapeHtml(t('common.next'))}</button></nav>`
+  }
 
+  async function renderContext() {
+    const [data, categories, templates] = await Promise.all([
+      getPageList({ limit: 1 }),
+      featureEnabled('categories') ? listCategories() : Promise.resolve([]),
+      featureEnabled('templates') ? listTemplates({ secure: Boolean(currentUser.canEdit) }) : Promise.resolve([])
+    ])
     return {
-      articleCount: visiblePages.length.toLocaleString('pt-BR'),
-      revisionCount: visiblePages.reduce((sum, page) => sum + (page.revisionCount || page.revisions?.length || 0), 0).toLocaleString('pt-BR'),
-      categoryCount: categories.length.toLocaleString('pt-BR'),
-      pageSlugs,
+      articleCount: data.total.toLocaleString(interfaceLocale()),
+      revisionCount: data.revisions.toLocaleString(interfaceLocale()),
+      categoryCount: categories.length.toLocaleString(interfaceLocale()),
       templates,
       slogan: SLOGAN
     }
   }
 
-  async function renderAllPages(serial) {
+  async function renderAllPages(serial, offset = 0) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Todas as páginas' })
-    const pages = (await listPages({ sort: 'title', limit: 1000 })).filter(pageVisibleByFeatures)
+    setDocumentTitle({ title: t('pages.all') })
+    const data = await getPageList({ sort: 'title', limit: 100, offset })
     if (!isCurrentRoute(serial)) return
-    commitHtml(serial, allPagesHtml(pages))
+    commitHtml(serial, allPagesHtml(data.pages) + paginationHtml(offset > 0, data.nextOffset !== null))
+    app.querySelector('[data-pages-prev]')?.addEventListener('click', () => renderAllPages(serial, Math.max(0, offset - 100)))
+    app.querySelector('[data-pages-next]')?.addEventListener('click', () => renderAllPages(serial, data.nextOffset))
   }
 
   function sortableTimestamp(value) {
@@ -502,16 +533,16 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
   async function renderRecentPages(serial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Páginas recentes' })
+    setDocumentTitle({ title: ui("Páginas recentes", "Recent pages") })
     const pages = (await listPages({ sort: 'recent', limit: 100 })).filter(pageVisibleByFeatures)
-    pages.sort((left, right) => sortableTimestamp(right.updatedAt) - sortableTimestamp(left.updatedAt) || String(left.title || '').localeCompare(String(right.title || ''), 'pt-BR'))
+    pages.sort((left, right) => sortableTimestamp(right.updatedAt) - sortableTimestamp(left.updatedAt) || String(left.title || '').localeCompare(String(right.title || ''), interfaceLocale()))
     if (!isCurrentRoute(serial)) return
     commitHtml(serial, recentPagesHtml(pages))
   }
 
   async function renderCategories(serial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Categorias' })
+    setDocumentTitle({ title: ui("Categorias", "Categories") })
     const categories = await listCategories()
     if (!isCurrentRoute(serial)) return
     commitHtml(serial, categoriesIndexHtml(categories))
@@ -519,19 +550,16 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
   async function renderCategory(categorySlug, serial) {
     updateChrome(`categoria/${categorySlug}`, 'read')
-    let category = null
-    try {
-      category = await getCategory(categorySlug)
-    } catch {}
+    const category = await getCategory(categorySlug)
     if (!isCurrentRoute(serial)) return
 
     if (!category) {
-      setDocumentTitle({ title: 'Categoria não encontrada' })
+      setDocumentTitle({ title: ui("Categoria não encontrada", "Category not found") })
       commitHtml(serial, notFoundHtml(`categoria/${categorySlug}`, currentUser))
       return
     }
 
-    setDocumentTitle({ title: `Categoria: ${category.name}` })
+    setDocumentTitle({ title: `${ui('Categoria:', 'Category:')} ${category.name}` })
     commitHtml(serial, categoryPageHtml(category))
   }
 
@@ -548,12 +576,12 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       const slug = slugify(data.get('slug')?.toString() || fileSlug)
 
       if (!(file instanceof File) || !file.size) {
-        if (note) note.textContent = 'Escolha uma imagem, um vídeo ou um áudio válido.'
+        if (note) note.textContent = ui("Escolha uma imagem, um vídeo ou um áudio válido.", "Choose a valid image, video or audio file.")
         return
       }
 
-      setEditorSaving(form, true, 'Enviando...')
-      if (note) note.textContent = 'Enviando o arquivo e registrando os metadados...'
+      setEditorSaving(form, true, ui("Enviando...", "Submitting..."))
+      if (note) note.textContent = ui('Enviando...', 'Uploading...')
 
       try {
         const result = await uploadImage(file, {
@@ -564,7 +592,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         navigate(result?.file?.pageUrl || pageUrl(`arquivo/${result?.file?.fileSlug || slug}`))
       } catch (error) {
         setEditorSaving(form, false)
-        if (note) note.textContent = `Não foi possível enviar o arquivo. ${error.message || ''}`
+        if (note) note.textContent = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${error.message || ''}`
       }
     })
   }
@@ -572,56 +600,53 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
   async function renderFile(fileSlug, serial) {
     const fullSlug = `arquivo/${fileSlug}`
     updateChrome(fullSlug, 'read')
-    let file = null
-    try {
-      file = await getFile(fileSlug)
-    } catch {}
+    const file = await getFile(fileSlug)
     if (!isCurrentRoute(serial)) return
 
     if (!file) {
       if (!featureEnabled('mediaUploads')) {
-        setDocumentTitle({ title: 'Uploads de mídia' })
-        commitHtml(serial, featureDisabledHtml('Uploads de mídia', 'O arquivo solicitado não existe e novos uploads estão desativados.'))
+        setDocumentTitle({ title: ui("Uploads de mídia", "Media uploads") })
+        commitHtml(serial, featureDisabledHtml(ui("Uploads de mídia", "Media uploads"), ui("O arquivo solicitado não existe e novos uploads estão desativados.", "The requested file does not exist and new uploads are disabled.")))
         return
       }
-      setDocumentTitle({ title: 'Enviar arquivo' })
+      setDocumentTitle({ title: ui("Enviar arquivo", "Upload file") })
       if (commitHtml(serial, fileUploadPageHtml(fileSlug, currentUser))) bindSpecialFileUpload(fileSlug)
       return
     }
 
-    setDocumentTitle({ title: `Arquivo:${file.filename}` })
+    setDocumentTitle({ title: `${ui("Arquivo:", "File:")}${file.filename}` })
     commitHtml(serial, filePageHtml(file))
   }
 
 
   async function renderRead(slug, serial) {
-    updateChrome(slug, 'read')
     const page = await getPage(slug)
     if (!isCurrentRoute(serial)) return
 
     if (!page) {
-      setDocumentTitle({ title: 'Página não encontrada' })
+      updateChrome(slug, 'read')
+      setDocumentTitle({ title: ui("Página não encontrada", "Page not found") })
       commitHtml(serial, notFoundHtml(slug, currentUser))
       return
     }
 
     if (page.resolvedBy === 'redirect' && page.slug) {
       const fragment = String(page.resolvedFragment || '').replace(/^#/, '')
-      const canonicalUrl = `${pageUrl(page.slug)}${fragment ? `#${encodeURIComponent(fragment)}` : ''}`
-      history.replaceState(null, '', canonicalUrl)
+      const canonicalUrl = `${pageUrl(page.slug)}${fragment ? `#${encodeURIComponent(fragment)}` : window.location.hash}`
+      history.replaceState(history.state, '', canonicalUrl)
     }
 
-    setDocumentTitle(page)
-    updateChrome(page.slug, 'read')
     const context = await renderContext()
     if (!isCurrentRoute(serial)) return
+    setDocumentTitle(page)
+    updateChrome(page.slug, 'read')
     if (commitHtml(serial, articleHtml(page, context))) {
-      await markMissingArticleLinks(serial, context.pageSlugs)
+      void markMissingArticleLinks(serial).catch(() => {})
     }
   }
 
 
-  async function renderHistory(slug, serial) {
+  async function renderHistory(slug, serial, offset = 0) {
     updateChrome(slug, 'history')
     if (String(slug || '').startsWith('arquivo/')) {
       setDocumentTitle({ title: 'Namespace de arquivo' })
@@ -630,7 +655,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     }
     if (isGeneratedSpecialSlug(slug)) {
       const info = specialPageInfo(slug) || { key: 'index', canonical: 'especial' }
-      history.replaceState(null, '', pageUrl(info.canonical))
+      history.replaceState(history.state, '', pageUrl(info.canonical))
       await renderSpecialPage(info, serial)
       return
     }
@@ -648,7 +673,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const context = await renderContext()
 
     if (revisionNumber) {
-      const revision = await getRevision(page.slug, revisionNumber).catch(() => null)
+      const revision = await getRevision(page.slug, revisionNumber)
       if (!isCurrentRoute(serial)) return
 
       if (!revision) {
@@ -656,16 +681,16 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         return
       }
 
-      setDocumentTitle(page, ` revisão ${revisionNumber}`)
+      setDocumentTitle(page, `${ui(" revisão ", " revision ")}${revisionNumber}`)
       updateChrome(page.slug, 'history')
       if (commitHtml(serial, revisionHtml(page, revision, context, currentUser))) {
-        await markMissingArticleLinks(serial, context.pageSlugs)
+        await markMissingArticleLinks(serial)
       }
       return
     }
 
     if (compareNumber) {
-      const revision = await getRevision(page.slug, compareNumber).catch(() => null)
+      const revision = await getRevision(page.slug, compareNumber)
       if (!isCurrentRoute(serial)) return
 
       if (!revision) {
@@ -673,333 +698,335 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         return
       }
 
-      setDocumentTitle(page, ` comparação ${compareNumber}`)
+      setDocumentTitle(page, `${ui(" comparação ", " comparison ")}${compareNumber}`)
       updateChrome(page.slug, 'history')
       commitHtml(serial, revisionCompareHtml(page, revision, page, currentUser))
       return
     }
 
-    const data = await listRevisions(page.slug).catch(() => ({ page, revisions: page.revisions || [] }))
+    const data = await listRevisions(page.slug, offset)
     if (!isCurrentRoute(serial)) return
 
-    setDocumentTitle(page, ' histórico')
+    setDocumentTitle(page, ui(" histórico", " history"))
     updateChrome(page.slug, 'history')
-    commitHtml(serial, historyHtml(page, data, currentUser))
+    commitHtml(serial, historyHtml(page, data, currentUser) + paginationHtml(offset > 0, data.nextOffset !== null, 'history'))
+    app.querySelector('[data-history-prev]')?.addEventListener('click', () => renderHistory(page.slug, serial, Math.max(0, offset - 100)))
+    app.querySelector('[data-history-next]')?.addEventListener('click', () => renderHistory(page.slug, serial, data.nextOffset))
   }
 
 
   function editSubtitle() {
     if (currentUser.verified) {
-      return `Autenticado pelo Cloudflare Access como ${escapeHtml(currentUser.email || 'editor autorizado')}.`
+      return `${ui('Autenticado pelo Cloudflare Access como', 'Signed in through Cloudflare Access as')} ${escapeHtml(currentUser.email || ui('editor autorizado', 'authorized editor'))}.`
     }
 
-    return `Autenticado como ${escapeHtml(currentUser.email || 'editor autorizado')}. Configure ACCESS_TEAM_DOMAIN e ACCESS_AUD para validação criptográfica do token.`
+    return `${ui('Autenticado como', 'Signed in as')} ${escapeHtml(currentUser.email || ui('editor autorizado', 'authorized editor'))}.`
   }
 
 
   function templateGalleryHtml() {
     return `
-      <section class="template-gallery-panel media-panel editor-tool-panel" aria-label="Galeria de templates" data-template-gallery hidden>
-        <h2>Galeria de templates <span class="beta-badge">em fase de testes</span></h2>
-        <p>Pesquise predefinições reutilizáveis e insira chamadas wiki no Markdown. Templates ainda estão em fase de testes.</p>
+      <section class="template-gallery-panel media-panel editor-tool-panel" aria-label="${ui('Galeria de templates', 'Template gallery')}" data-template-gallery hidden>
+        <h2>${ui("Galeria de templates", "Template gallery")} <span class="beta-badge">${ui("em fase de testes", "in testing")}</span></h2>
+        <p>${ui("Pesquise predefinições reutilizáveis e insira chamadas wiki no Markdown. Templates ainda estão em fase de testes.", "Search reusable templates and insert wiki calls into Markdown. Templates are still in testing.")}</p>
         <div class="media-library-controls template-gallery-controls">
           <label>
-            Pesquisar template<br />
-            <input type="search" data-template-search placeholder="manutenção, mídia, aviso, fundo" />
+            ${ui("Pesquisar template", "Search template")}<br />
+            <input type="search" data-template-search placeholder="${ui("manutenção, mídia, aviso, fundo", "maintenance, media, notices, backgrounds")}" />
           </label>
           <label>
-            Grupo<br />
+            ${ui("Grupo", "Group")}<br />
             <select data-template-group>
-              <option value="">Todos</option>
+              <option value="">${ui("Todos", "All")}</option>
             </select>
           </label>
-          <button class="secondary-button" type="button" data-template-load>Pesquisar</button>
+          <button class="secondary-button" type="button" data-template-load>${ui("Pesquisar", "Search")}</button>
         </div>
         <div class="template-gallery-grid" data-template-grid>
-          <p class="upload-note">Pesquise ou clique em Pesquisar para listar os templates disponíveis.</p>
+          <p class="upload-note">${ui("Pesquise ou clique em Pesquisar para listar os templates disponíveis.", "Search to list available templates.")}</p>
         </div>
-        <p class="upload-note" data-template-gallery-note>Templates estão em fase de testes. Templates de convidado aparecem para propostas públicas; templates de editor aparecem quando há login pelo Cloudflare Access.</p>
+        <p class="upload-note" data-template-gallery-note>${ui("Templates estão em fase de testes. Templates de convidado aparecem para propostas públicas; templates de editor aparecem quando há login pelo Cloudflare Access.", "Templates are in testing. Guest templates are available for public proposals; editor templates require Cloudflare Access.")}</p>
       </section>
     `
   }
 
   function uploadPanelHtml() {
     return `
-      <section class="upload-panel media-panel editor-tool-panel" aria-label="Mídia do artigo" data-media-panel hidden>
-        <h2>Mídia do artigo</h2>
-        <p>Envie imagens ou vídeos novos, insira arquivos do acervo, ou incorpore vídeo por link direto/YouTube.</p>
+      <section class="upload-panel media-panel editor-tool-panel" aria-label="${ui("Mídia do artigo", "Article media")}" data-media-panel hidden>
+        <h2>${ui("Mídia do artigo", "Article media")}</h2>
+        <p>${ui("Envie imagens ou vídeos novos, insira arquivos do acervo, ou incorpore vídeo por link direto/YouTube.", "Upload images or videos, insert existing media, or embed a direct video link or YouTube video.")}</p>
 
-        <div class="media-tabs" role="tablist" aria-label="Opções de mídia">
-          <button class="is-active" type="button" data-media-tab-target="upload">Enviar imagem</button>
-          <button type="button" data-media-tab-target="video-upload">Enviar vídeo</button>
+        <div class="media-tabs" role="tablist" aria-label="${ui("Opções de mídia", "Media options")}">
+          <button class="is-active" type="button" data-media-tab-target="upload">${ui("Enviar imagem", "Upload image")}</button>
+          <button type="button" data-media-tab-target="video-upload">${ui("Enviar vídeo", "Upload video")}</button>
           <button type="button" data-media-tab-target="external-video">Link/YouTube</button>
-          <button type="button" data-media-tab-target="audio-upload">Enviar áudio</button>
-          <button type="button" data-media-tab-target="external-audio">Link de áudio</button>
-          <button type="button" data-media-tab-target="library">Galeria de mídia</button>
+          <button type="button" data-media-tab-target="audio-upload">${ui("Enviar áudio", "Upload audio")}</button>
+          <button type="button" data-media-tab-target="external-audio">${ui("Link de áudio", "Audio link")}</button>
+          <button type="button" data-media-tab-target="library">${ui("Galeria de mídia", "Media gallery")}</button>
         </div>
 
         <div class="media-tab-panel" data-media-tab-panel="upload">
           <div class="upload-grid upload-grid-wide">
             <label>
-              Arquivo<br />
+              ${ui("Arquivo", "File")}<br />
               <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-upload-file />
             </label>
             <label>
-              Legenda opcional<br />
-              <input type="text" data-upload-caption placeholder="descrição curta da imagem" />
+              ${ui("Legenda opcional", "Optional caption")}<br />
+              <input type="text" data-upload-caption placeholder="${ui("descrição curta da imagem", "short image description")}" />
             </label>
             <label>
-              Localização da miniatura<br />
+              ${ui("Localização da miniatura", "Thumbnail position")}<br />
               <select data-upload-align>
-                <option value="right" selected>Direita</option>
-                <option value="left">Esquerda</option>
-                <option value="center">Centro</option>
+                <option value="right" selected>${ui("Direita", "Right")}</option>
+                <option value="left">${ui("Esquerda", "Left")}</option>
+                <option value="center">${ui("Centro", "Center")}</option>
               </select>
             </label>
             <label>
-              Largura<br />
+              ${ui("Largura", "Width")}<br />
               <input type="number" min="120" max="420" step="10" value="260" data-upload-width />
             </label>
           </div>
           <div class="editor-actions">
-            <button class="secondary-button" type="button" data-upload-button>Enviar e inserir no artigo</button>
+            <button class="secondary-button" type="button" data-upload-button>${ui("Enviar e inserir no artigo", "Upload and insert in article")}</button>
           </div>
-          <p class="upload-note" data-upload-note>O upload direto é restrito a editores autenticados pelo Cloudflare Access.</p>
+          <p class="upload-note" data-upload-note>${ui("O upload direto é restrito a editores autenticados pelo Cloudflare Access.", "Direct uploads require an editor authenticated through Cloudflare Access.")}</p>
         </div>
 
         <div class="media-tab-panel" data-media-tab-panel="video-upload" hidden>
           <div class="upload-grid upload-grid-wide">
             <label>
-              Arquivo de vídeo<br />
+              ${ui("Arquivo de vídeo", "Video file")}<br />
               <input type="file" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.ogg,.ogv,.mov,.m4v" data-video-upload-file />
             </label>
             <label>
-              Legenda opcional<br />
-              <input type="text" data-video-upload-caption placeholder="descrição curta do vídeo" />
+              ${ui("Legenda opcional", "Optional caption")}<br />
+              <input type="text" data-video-upload-caption placeholder="${ui("descrição curta do vídeo", "short video description")}" />
             </label>
             <label>
-              Título opcional<br />
-              <input type="text" data-video-upload-title placeholder="nome exibido acima do vídeo" />
+              ${ui("Título opcional", "Optional title")}<br />
+              <input type="text" data-video-upload-title placeholder="${ui("nome exibido acima do vídeo", "name displayed above the video")}" />
             </label>
             <label>
-              Inserir como<br />
+              ${ui("Inserir como", "Insert as")}<br />
               <select data-video-upload-mode>
-                <option value="thumb" selected>Miniatura</option>
-                <option value="image">Vídeo grande</option>
-                <option value="gallery">Galeria</option>
+                <option value="thumb" selected>${ui("Miniatura", "Thumbnail")}</option>
+                <option value="image">${ui("Vídeo grande", "Large video")}</option>
+                <option value="gallery">${ui("Galeria", "Gallery")}</option>
               </select>
             </label>
             <label>
-              Localização<br />
+              ${ui("Localização", "Location")}<br />
               <select data-video-upload-align>
-                <option value="right" selected>Direita</option>
-                <option value="left">Esquerda</option>
-                <option value="center">Centro</option>
+                <option value="right" selected>${ui("Direita", "Right")}</option>
+                <option value="left">${ui("Esquerda", "Left")}</option>
+                <option value="center">${ui("Centro", "Center")}</option>
               </select>
             </label>
             <label>
-              Largura<br />
+              ${ui("Largura", "Width")}<br />
               <input type="number" min="120" max="420" step="10" value="260" data-video-upload-width />
             </label>
           </div>
           <div class="editor-actions">
-            <button class="secondary-button" type="button" data-video-upload-button>Enviar vídeo e inserir</button>
+            <button class="secondary-button" type="button" data-video-upload-button>${ui("Enviar vídeo e inserir", "Upload and insert video")}</button>
           </div>
-          <p class="upload-note" data-video-upload-note>São aceitos MP4, WebM, OGG/OGV e MOV até 50 MB.</p>
+          <p class="upload-note" data-video-upload-note>${ui("São aceitos MP4, WebM, OGG/OGV e MOV até 50 MB.", "Accepts MP4, WebM, OGG/OGV and MOV up to 50 MB.")}</p>
         </div>
 
         <div class="media-tab-panel" data-media-tab-panel="external-video" hidden>
           <div class="upload-grid upload-grid-wide">
             <label>
-              Link do vídeo<br />
+              ${ui("Link do vídeo", "Video link")}<br />
               <input type="url" data-video-url placeholder="https://youtu.be/... ou https://site/video.mp4" />
             </label>
             <label>
-              Título opcional<br />
-              <input type="text" data-video-url-title placeholder="nome exibido acima do vídeo" />
+              ${ui("Título opcional", "Optional title")}<br />
+              <input type="text" data-video-url-title placeholder="${ui("nome exibido acima do vídeo", "name displayed above the video")}" />
             </label>
             <label>
-              Legenda opcional<br />
-              <input type="text" data-video-url-caption placeholder="descrição curta do vídeo" />
+              ${ui("Legenda opcional", "Optional caption")}<br />
+              <input type="text" data-video-url-caption placeholder="${ui("descrição curta do vídeo", "short video description")}" />
             </label>
             <label>
-              Tipo<br />
+              ${ui("Tipo", "Type")}<br />
               <select data-video-url-kind>
-                <option value="auto" selected>Detectar automaticamente</option>
+                <option value="auto" selected>${ui("Detectar automaticamente", "Detect automatically")}</option>
                 <option value="youtube">YouTube</option>
-                <option value="direct">Arquivo direto</option>
+                <option value="direct">${ui("Arquivo direto", "Direct file")}</option>
               </select>
             </label>
             <label>
-              Inserir como<br />
+              ${ui("Inserir como", "Insert as")}<br />
               <select data-video-url-mode>
-                <option value="image" selected>Vídeo grande</option>
-                <option value="thumb">Miniatura</option>
-                <option value="gallery">Galeria</option>
+                <option value="image" selected>${ui("Vídeo grande", "Large video")}</option>
+                <option value="thumb">${ui("Miniatura", "Thumbnail")}</option>
+                <option value="gallery">${ui("Galeria", "Gallery")}</option>
               </select>
             </label>
             <label>
-              Localização<br />
+              ${ui("Localização", "Location")}<br />
               <select data-video-url-align>
-                <option value="right" selected>Direita</option>
-                <option value="left">Esquerda</option>
-                <option value="center">Centro</option>
+                <option value="right" selected>${ui("Direita", "Right")}</option>
+                <option value="left">${ui("Esquerda", "Left")}</option>
+                <option value="center">${ui("Centro", "Center")}</option>
               </select>
             </label>
             <label>
-              Largura<br />
+              ${ui("Largura", "Width")}<br />
               <input type="number" min="120" max="420" step="10" value="260" data-video-url-width />
             </label>
           </div>
           <div class="editor-actions">
-            <button class="secondary-button" type="button" data-video-url-insert>Inserir vídeo por link</button>
+            <button class="secondary-button" type="button" data-video-url-insert>${ui("Inserir vídeo por link", "Insert video link")}</button>
           </div>
-          <p class="upload-note" data-video-url-note>Use links do YouTube ou arquivos diretos .mp4, .webm, .ogg/.ogv, .mov e .m4v.</p>
+          <p class="upload-note" data-video-url-note>${ui("Use links do YouTube ou arquivos diretos .mp4, .webm, .ogg/.ogv, .mov e .m4v.", "Use YouTube links or direct .mp4, .webm, .ogg/.ogv, .mov and .m4v files.")}</p>
         </div>
 
         <div class="media-tab-panel" data-media-tab-panel="audio-upload" hidden>
           <div class="upload-grid upload-grid-wide">
             <label>
-              Arquivo de áudio<br />
+              ${ui("Arquivo de áudio", "Audio file")}<br />
               <input type="file" accept="audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/webm,audio/flac,audio/aac,audio/mp4,.mp3,.ogg,.oga,.wav,.webm,.flac,.aac,.m4a" data-audio-upload-file />
             </label>
             <label>
-              Legenda opcional<br />
-              <input type="text" data-audio-upload-caption placeholder="descrição curta do áudio" />
+              ${ui("Legenda opcional", "Optional caption")}<br />
+              <input type="text" data-audio-upload-caption placeholder="${ui("descrição curta do áudio", "short audio description")}" />
             </label>
             <label>
-              Título opcional<br />
-              <input type="text" data-audio-upload-title placeholder="nome exibido acima do áudio" />
+              ${ui("Título opcional", "Optional title")}<br />
+              <input type="text" data-audio-upload-title placeholder="${ui("nome exibido acima do áudio", "name displayed above the audio")}" />
             </label>
             <label>
-              Inserir como<br />
+              ${ui("Inserir como", "Insert as")}<br />
               <select data-audio-upload-mode>
-                <option value="image" selected>Áudio grande</option>
-                <option value="thumb">Miniatura</option>
-                <option value="gallery">Galeria</option>
+                <option value="image" selected>${ui("Áudio grande", "Large audio")}</option>
+                <option value="thumb">${ui("Miniatura", "Thumbnail")}</option>
+                <option value="gallery">${ui("Galeria", "Gallery")}</option>
               </select>
             </label>
             <label>
-              Localização<br />
+              ${ui("Localização", "Location")}<br />
               <select data-audio-upload-align>
-                <option value="right" selected>Direita</option>
-                <option value="left">Esquerda</option>
-                <option value="center">Centro</option>
+                <option value="right" selected>${ui("Direita", "Right")}</option>
+                <option value="left">${ui("Esquerda", "Left")}</option>
+                <option value="center">${ui("Centro", "Center")}</option>
               </select>
             </label>
             <label>
-              Largura<br />
+              ${ui("Largura", "Width")}<br />
               <input type="number" min="120" max="420" step="10" value="260" data-audio-upload-width />
             </label>
           </div>
           <div class="editor-actions">
-            <button class="secondary-button" type="button" data-audio-upload-button>Enviar áudio e inserir</button>
+            <button class="secondary-button" type="button" data-audio-upload-button>${ui("Enviar áudio e inserir", "Upload and insert audio")}</button>
           </div>
-          <p class="upload-note" data-audio-upload-note>São aceitos MP3, OGG/OGA, WAV, WebM, FLAC, AAC e M4A até 50 MB.</p>
+          <p class="upload-note" data-audio-upload-note>${ui("São aceitos MP3, OGG/OGA, WAV, WebM, FLAC, AAC e M4A até 50 MB.", "Accepts MP3, OGG/OGA, WAV, WebM, FLAC, AAC and M4A up to 50 MB.")}</p>
         </div>
 
         <div class="media-tab-panel" data-media-tab-panel="external-audio" hidden>
           <div class="upload-grid upload-grid-wide">
             <label>
-              Link do áudio<br />
+              ${ui("Link do áudio", "Audio link")}<br />
               <input type="url" data-audio-url placeholder="https://site/audio.mp3" />
             </label>
             <label>
-              Título opcional<br />
-              <input type="text" data-audio-url-title placeholder="nome exibido acima do áudio" />
+              ${ui("Título opcional", "Optional title")}<br />
+              <input type="text" data-audio-url-title placeholder="${ui("nome exibido acima do áudio", "name displayed above the audio")}" />
             </label>
             <label>
-              Legenda opcional<br />
-              <input type="text" data-audio-url-caption placeholder="descrição curta do áudio" />
+              ${ui("Legenda opcional", "Optional caption")}<br />
+              <input type="text" data-audio-url-caption placeholder="${ui("descrição curta do áudio", "short audio description")}" />
             </label>
             <label>
-              Inserir como<br />
+              ${ui("Inserir como", "Insert as")}<br />
               <select data-audio-url-mode>
-                <option value="image" selected>Áudio grande</option>
-                <option value="thumb">Miniatura</option>
-                <option value="gallery">Galeria</option>
+                <option value="image" selected>${ui("Áudio grande", "Large audio")}</option>
+                <option value="thumb">${ui("Miniatura", "Thumbnail")}</option>
+                <option value="gallery">${ui("Galeria", "Gallery")}</option>
               </select>
             </label>
             <label>
-              Localização<br />
+              ${ui("Localização", "Location")}<br />
               <select data-audio-url-align>
-                <option value="right" selected>Direita</option>
-                <option value="left">Esquerda</option>
-                <option value="center">Centro</option>
+                <option value="right" selected>${ui("Direita", "Right")}</option>
+                <option value="left">${ui("Esquerda", "Left")}</option>
+                <option value="center">${ui("Centro", "Center")}</option>
               </select>
             </label>
             <label>
-              Largura<br />
+              ${ui("Largura", "Width")}<br />
               <input type="number" min="120" max="420" step="10" value="260" data-audio-url-width />
             </label>
           </div>
           <div class="editor-actions">
-            <button class="secondary-button" type="button" data-audio-url-insert>Inserir áudio por link</button>
+            <button class="secondary-button" type="button" data-audio-url-insert>${ui("Inserir áudio por link", "Insert audio link")}</button>
           </div>
-          <p class="upload-note" data-audio-url-note>Use links diretos .mp3, .ogg/.oga, .wav, .webm, .flac, .aac ou .m4a.</p>
+          <p class="upload-note" data-audio-url-note>${ui("Use links diretos .mp3, .ogg/.oga, .wav, .webm, .flac, .aac ou .m4a.", "Use direct .mp3, .ogg/.oga, .wav, .webm, .flac, .aac or .m4a links.")}</p>
         </div>
 
         <div class="media-tab-panel" data-media-tab-panel="library" hidden>
           <div class="media-library-controls">
             <label>
-              Pesquisar mídia<br />
-              <input type="search" data-media-search placeholder="nome, legenda ou descrição" />
+              ${ui("Pesquisar mídia", "Search media")}<br />
+              <input type="search" data-media-search placeholder="${ui("nome, legenda ou descrição", "name, caption or description")}" />
             </label>
             <label>
-              Inserir como<br />
+              ${ui("Inserir como", "Insert as")}<br />
               <select data-media-insert-mode>
-                <option value="thumb" selected>Miniatura</option>
-                <option value="image">Mídia grande</option>
-                <option value="gallery">Galeria</option>
+                <option value="thumb" selected>${ui("Miniatura", "Thumbnail")}</option>
+                <option value="image">${ui("Mídia grande", "Large media")}</option>
+                <option value="gallery">${ui("Galeria", "Gallery")}</option>
               </select>
             </label>
             <label>
-              Localização<br />
+              ${ui("Localização", "Location")}<br />
               <select data-media-insert-align>
-                <option value="right" selected>Direita</option>
-                <option value="left">Esquerda</option>
-                <option value="center">Centro</option>
+                <option value="right" selected>${ui("Direita", "Right")}</option>
+                <option value="left">${ui("Esquerda", "Left")}</option>
+                <option value="center">${ui("Centro", "Center")}</option>
               </select>
             </label>
             <label>
-              Largura<br />
+              ${ui("Largura", "Width")}<br />
               <input type="number" min="120" max="420" step="10" value="260" data-media-insert-width />
             </label>
-            <button class="secondary-button" type="button" data-media-search-button>Pesquisar</button>
+            <button class="secondary-button" type="button" data-media-search-button>${ui("Pesquisar", "Search")}</button>
           </div>
           <div class="media-library-grid" data-media-library-grid>
-            <p class="upload-note">Abra esta aba para carregar a mídia enviada.</p>
+            <p class="upload-note">${ui("Abra esta aba para carregar a mídia enviada.", "Open this tab to load uploaded media.")}</p>
           </div>
-          <p class="upload-note" data-media-library-note>Escolha um arquivo do acervo e como ele deve ser inserido no Markdown.</p>
+          <p class="upload-note" data-media-library-note>${ui("Escolha um arquivo do acervo e como ele deve ser inserido no Markdown.", "Select an existing file and how to insert it into Markdown.")}</p>
         </div>
       </section>
     `
   }
 
-  function editorToolbarHtml() {
+  function editorToolbarHtml(isProposal) {
     return `
-      <div class="editor-toolbar" role="toolbar" aria-label="Ferramentas de edição">
-        <button type="button" data-editor-tool="bold" title="Negrito"><strong>B</strong></button>
-        <button type="button" data-editor-tool="italic" title="Itálico"><em>I</em></button>
-        <button type="button" data-editor-tool="underline" title="Sublinhado"><u>U</u></button>
-        <button type="button" data-editor-tool="strike" title="Riscado"><s>S</s></button>
-        <button type="button" data-editor-tool="inlinecode" title="Código inline"><code>&lt;&gt;</code></button>
+      <div class="editor-toolbar" role="toolbar" aria-label="${ui("Ferramentas de edição", "Editing tools")}">
+        <button type="button" data-editor-tool="bold" title="${ui("Negrito", "Bold")}"><strong>B</strong></button>
+        <button type="button" data-editor-tool="italic" title="${ui("Itálico", "Italic")}"><em>I</em></button>
+        <button type="button" data-editor-tool="underline" title="${ui("Sublinhado", "Underline")}"><u>U</u></button>
+        <button type="button" data-editor-tool="strike" title="${ui("Riscado", "Strikethrough")}"><s>S</s></button>
+        <button type="button" data-editor-tool="inlinecode" title="${ui("Código inline", "Inline code")}"><code>&lt;&gt;</code></button>
         <button type="button" data-editor-tool="link" title="Link">🔗</button>
-        <button type="button" data-editor-tool="heading" title="Título de seção">H2</button>
-        <button type="button" data-editor-tool="subheading" title="Subtítulo de seção">H3</button>
-        <button type="button" data-editor-tool="toc" title="Índice do artigo">☷</button>
-        <button type="button" data-editor-tool="unordered" title="Lista não ordenada">•</button>
-        <button type="button" data-editor-tool="ordered" title="Lista ordenada">1.</button>
+        <button type="button" data-editor-tool="heading" title="${ui("Título de seção", "Section heading")}">H2</button>
+        <button type="button" data-editor-tool="subheading" title="${ui("Subtítulo de seção", "Section subheading")}">H3</button>
+        <button type="button" data-editor-tool="toc" title="${ui("Índice do artigo", "Article table of contents")}">☷</button>
+        <button type="button" data-editor-tool="unordered" title="${ui("Lista não ordenada", "Unordered list")}">•</button>
+        <button type="button" data-editor-tool="ordered" title="${ui("Lista ordenada", "Ordered list")}">1.</button>
         <button type="button" data-editor-tool="blockquote" title="Blockquote">❯</button>
-        <button type="button" data-editor-tool="codeblock" title="Bloco de código">{ }</button>
-        <button type="button" data-editor-tool="table" title="Tabela">▦</button>
-        ${featureEnabled('mediaUploads') && !isProposal ? '<button type="button" data-editor-tool="media" title="Mídia do artigo">🖼</button>' : ''}
+        <button type="button" data-editor-tool="codeblock" title="${ui("Bloco de código", "Code block")}">{ }</button>
+        <button type="button" data-editor-tool="table" title="${ui("Tabela", "Table")}">▦</button>
+        ${featureEnabled('mediaUploads') && !isProposal ? `<button type="button" data-editor-tool="media" title="${ui('Mídia do artigo', 'Article media')}">🖼</button>` : ''}
         ${featureEnabled('templates') ? '<button type="button" data-editor-tool="templates" title="Galeria de templates">▣</button>' : ''}
-        <button type="button" data-editor-tool="thumb" title="Miniatura">▧</button>
-        <button type="button" data-editor-tool="gallery" title="Galeria de mídia">▥</button>
-        <button type="button" data-editor-tool="quote" title="Citação especial">❝</button>
+        <button type="button" data-editor-tool="thumb" title="${ui("Miniatura", "Thumbnail")}">▧</button>
+        <button type="button" data-editor-tool="gallery" title="${ui("Galeria de mídia", "Media gallery")}">▥</button>
+        <button type="button" data-editor-tool="quote" title="${ui("Citação especial", "Special quote")}">❝</button>
         <button type="button" data-editor-tool="infobox" title="Infobox">▤</button>
-        <button type="button" data-editor-tool="messagebox" title="Caixa de aviso">ⓘ</button>
+        <button type="button" data-editor-tool="messagebox" title="${ui("Caixa de aviso", "Notice box")}">ⓘ</button>
       </div>
     `
   }
@@ -1033,14 +1060,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     return `
       <div class="editor-redirect-row" data-editor-redirect-row>
         <label>
-          URL de origem
+          ${ui("URL de origem", "Source URL")}
           <span class="editor-url-control"><span class="editor-url-prefix">/wiki/</span><input type="text" data-redirect-from value="${escapeHtml(rule.fromSlug || '')}" placeholder="nome-antigo-da-pagina" /></span>
         </label>
         <label>
-          Seção de destino opcional
+          ${ui("Seção de destino opcional", "Optional target section")}
           <span class="editor-url-control"><span class="editor-url-prefix">#</span><input type="text" data-redirect-fragment value="${escapeHtml(rule.fragment || '')}" placeholder="titulo-da-secao" /></span>
         </label>
-        <button class="danger-button compact-button" type="button" data-editor-redirect-remove>Remover</button>
+        <button class="danger-button compact-button" type="button" data-editor-redirect-remove>${ui("Remover", "Remove")}</button>
       </div>
     `
   }
@@ -1051,22 +1078,22 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       : (page.redirects || []).map(fromSlug => ({ fromSlug, fragment: '' }))
     return `
       <details class="editor-routing-panel" data-editor-routing open>
-        <summary>Aliases e redirecionamentos avançados</summary>
-        <p>Recursos editoriais. Visitantes não podem pedir aliases ou redirecionamentos em propostas.</p>
+        <summary>${ui("Aliases e redirecionamentos avançados", "Advanced aliases and redirects")}</summary>
+        <p>${ui("Recursos editoriais. Visitantes não podem pedir aliases ou redirecionamentos em propostas.", "Editorial features. Visitors cannot request aliases or redirects in proposals.")}</p>
         <div class="editor-routing-grid">
           <label>
-            Aliases de título
-            <textarea name="aliases" rows="4" placeholder="um título alternativo por linha">${escapeHtml((page.aliases || []).map(alias => alias.title || alias).join('\n'))}</textarea>
-            <small>Aliases participam da pesquisa e abrem a página canônica.</small>
+            ${ui("Aliases de título", "Title aliases")}
+            <textarea name="aliases" rows="4" placeholder="${ui("um título alternativo por linha", "one alternative title per line")}">${escapeHtml((page.aliases || []).map(alias => alias.title || alias).join('\n'))}</textarea>
+            <small>${ui("Aliases participam da pesquisa e abrem a página canônica.", "Aliases appear in search and open the canonical page.")}</small>
           </label>
           <section class="editor-redirects-box">
-            <h3>Redirecionamentos para esta página</h3>
-            <p>Uma origem pode apontar para a página inteira ou para uma seção específica.</p>
+            <h3>${ui("Redirecionamentos para esta página", "Redirects to this page")}</h3>
+            <p>${ui("Uma origem pode apontar para a página inteira ou para uma seção específica.", "A source can point to a whole page or a specific section.")}</p>
             <div data-editor-redirect-list>
               ${(rules.length ? rules : [{ fromSlug: '', fragment: '' }]).map(redirectRuleRowHtml).join('')}
             </div>
             <input type="hidden" name="redirectRulesJson" value="${escapeHtml(JSON.stringify(rules))}" />
-            <button class="secondary-button compact-button" type="button" data-editor-redirect-add>Adicionar redirecionamento</button>
+            <button class="secondary-button compact-button" type="button" data-editor-redirect-add>${ui("Adicionar redirecionamento", "Add redirect")}</button>
           </section>
         </div>
       </details>
@@ -1124,21 +1151,21 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
     return `
       <header class="article-header">
-        <h1>${isProposal ? 'Sugerindo alteração em' : page.isNew ? 'Criando' : 'Editando'} “${escapeHtml(page.title)}”</h1>
-        <p class="article-subtitle">${isProposal ? 'A proposta será enviada para análise editorial antes de qualquer publicação.' : editSubtitle()}</p>
+        <h1>${isProposal ? ui("Sugerindo alteração em", "Suggesting changes to") : page.isNew ? ui("Criando", "Creating") : ui("Editando", "Editing")} “${escapeHtml(page.title)}”</h1>
+        <p class="article-subtitle">${isProposal ? ui("A proposta será enviada para análise editorial antes de qualquer publicação.", "The proposal will be reviewed before publication.") : editSubtitle()}</p>
       </header>
 
       <form class="editor-panel" id="editForm">
         <div class="editor-draft-warning" data-draft-warning hidden></div>
-        <p class="editor-draft-status" data-editor-draft-status>Rascunho local ativo. Alterações no editor serão salvas neste navegador.</p>
+        <p class="editor-draft-status" data-editor-draft-status>${ui("Rascunho local ativo. Alterações no editor serão salvas neste navegador.", "Local draft enabled. Edits are saved in this browser.")}</p>
 
         <label>
-          Título<br />
+          ${ui("Título", "Title")}<br />
           <input name="title" value="${escapeHtml(page.title)}" required />
         </label>
 
         <label>
-          Subtítulo<br />
+          ${ui("Subtítulo", "Subtitle")}<br />
           <input name="subtitle" value="${escapeHtml(page.subtitle || '')}" />
         </label>
 
@@ -1146,14 +1173,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           URL<br />
           ${(() => {
             const parts = editorUrlParts(page.slug || slugify(page.title))
-            return `<span class="editor-url-control"><span class="editor-url-prefix">${escapeHtml(parts.prefix)}</span><input name="urlSlug" value="${escapeHtml(parts.value)}" autocomplete="off" /></span>`
+            return `<span class="editor-url-control"><span class="editor-url-prefix">${escapeHtml(parts.prefix)}</span><input name="urlSlug" value="${escapeHtml(parts.value)}" autocomplete="off" ${mode === 'edit' && !page.isNew && !['admin', 'super_admin'].includes(currentUser.role) ? 'readonly' : ''} /></span>`
           })()}
-          <small>Edite apenas o nome final da página. O prefixo do namespace fica travado.</small>
+          <small>${ui("Edite apenas o nome final da página. O prefixo do namespace fica travado.", "Edit the final page name. The namespace prefix remains fixed.")}</small>
         </label>
 
         <div class="editor-content-field">
-          <label for="wiki-editor-content">Conteúdo em Markdown</label>
-          ${editorToolbarHtml()}
+          <label for="wiki-editor-content">${ui("Conteúdo em Markdown", "Markdown content")}</label>
+          ${editorToolbarHtml(isProposal)}
           <div class="editor-tool-panel-region">
             ${featureEnabled('templates') ? templateGalleryHtml() : ''}
             ${featureEnabled('mediaUploads') && !isProposal ? uploadPanelHtml() : ''}
@@ -1163,7 +1190,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
         ${featureEnabled('categories') ? `
           <label>
-            Categorias<br />
+            ${ui("Categorias", "Categories")}<br />
             <input name="categories" value="${escapeHtml((page.categories || []).join(', '))}" />
           </label>
         ` : ''}
@@ -1171,25 +1198,25 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         ${!isProposal ? editorRoutingHtml(page) : ''}
 
         <label>
-          Resumo da ${isProposal ? 'proposta' : 'edição'}<br />
-          <input name="summary" placeholder="descreva brevemente a alteração" required />
+          ${ui("Resumo da ", "Summary of the ")}${isProposal ? ui("proposta", "proposal") : ui("edição", "edit")}<br />
+          <input name="summary" placeholder="${ui("descreva brevemente a alteração", "briefly describe the change")}" required />
         </label>
 
         ${isProposal ? `
           <label>
-            Contato opcional<br />
-            <input name="contact" placeholder="e-mail, Discord ou outra referência" />
+            ${ui("Contato opcional", "Optional contact")}<br />
+            <input name="contact" placeholder="${ui("e-mail, Discord ou outra referência", "email, Discord or another contact")}" />
           </label>
         ` : ''}
 
         <div class="editor-actions">
-          <button class="primary-button" type="submit">${isProposal ? 'Enviar proposta' : 'Salvar revisão'}</button>
-          <button class="secondary-button" type="button" data-editor-preview-button>Pré-visualizar</button>
-          <a class="secondary-button" href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">Cancelar</a>
-          ${!isProposal && !page.isNew && canDeletePage ? '<button class="danger-button" type="button" data-delete-page>Deletar página</button>' : ''}
+          <button class="primary-button" type="submit">${isProposal ? ui("Enviar proposta", "Submit proposal") : ui("Salvar revisão", "Save revision")}</button>
+          <button class="secondary-button" type="button" data-editor-preview-button>${ui("Pré-visualizar", "Preview")}</button>
+          <a class="secondary-button" href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui("Cancelar", "Cancel")}</a>
+          ${!isProposal && !page.isNew && canDeletePage ? `<button class="danger-button" type="button" data-delete-page>${ui("Deletar página", "Delete page")}</button>` : ''}
         </div>
 
-        <p class="editor-note" id="editorNote">${isProposal ? 'Visitantes não editam diretamente. A proposta é enviada para a fila de revisão.' : 'A edição direta é aceita automaticamente para e-mails autorizados pelo Cloudflare Access.'}</p>
+        <p class="editor-note" id="editorNote">${isProposal ? ui("Visitantes não editam diretamente. A proposta é enviada para a fila de revisão.", "Visitors submit proposals to the review queue.") : ui("A edição direta é aceita automaticamente para e-mails autorizados pelo Cloudflare Access.", "Direct editing is available to editors authorized through Cloudflare Access.")}</p>
       </form>
 
       <section class="editor-preview-slot" data-editor-preview hidden></section>
@@ -1342,7 +1369,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       status.dataset.editorDraftStatus = ''
       form.prepend(status)
     }
-    status.textContent = 'Rascunho local ativo. Alterações no editor serão salvas neste navegador.'
+    status.textContent = ui("Rascunho local ativo. Alterações no editor serão salvas neste navegador.", "Local draft enabled. Edits are saved in this browser.")
 
     let timer = 0
     let lastSavedAt = ''
@@ -1367,25 +1394,25 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!draftHasUsefulContent(draft)) return
       if (writeEditorDraft(key, draft)) {
         lastSavedAt = draft.savedAt
-        updateStatus(`Rascunho local salvo às ${new Date(draft.savedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)
+        updateStatus(`${ui("Rascunho local salvo às ", "Local draft saved at ")}${new Date(draft.savedAt).toLocaleTimeString(interfaceLocale(), { hour: '2-digit', minute: '2-digit' })}.`)
       } else {
-        updateStatus('Não foi possível salvar o rascunho local. O armazenamento do navegador pode estar cheio ou bloqueado.')
+        updateStatus(ui("Não foi possível salvar o rascunho local. O armazenamento do navegador pode estar cheio ou bloqueado.", "Could not save the local draft. Browser storage may be full or blocked."))
       }
     }
 
     const scheduleSave = () => {
       window.clearTimeout(timer)
-      updateStatus('Salvando rascunho local...')
+      updateStatus(ui("Salvando rascunho local...", "Saving local draft..."))
       timer = window.setTimeout(save, 700)
     }
 
     const currentFields = formDraftFields(form)
     if (draftHasUsefulContent(saved) && JSON.stringify(saved.fields || {}) !== JSON.stringify(currentFields)) {
-      const when = saved.savedAt ? new Date(saved.savedAt).toLocaleString('pt-BR') : 'data desconhecida'
+      const when = saved.savedAt ? new Date(saved.savedAt).toLocaleString(interfaceLocale()) : ui("data desconhecida", "unknown date")
       const target = warning || note
       if (target) {
         target.hidden = false
-        target.innerHTML = `Há um rascunho local desta edição salvo em ${escapeHtml(when)}. <button class="secondary-button compact-button" type="button" data-draft-restore>Restaurar</button> <button class="secondary-button compact-button" type="button" data-draft-discard>Descartar</button>`
+        target.innerHTML = `${ui("Há um rascunho local desta edição salvo em ", "A local draft of this edit was saved on ")}${escapeHtml(when)}. <button class="secondary-button compact-button" type="button" data-draft-restore>${ui("Restaurar", "Restore")}</button> <button class="secondary-button compact-button" type="button" data-draft-discard>${ui("Descartar", "Discard")}</button>`
       }
     }
 
@@ -1400,7 +1427,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         if (draftHasUsefulContent(draft)) {
           applyDraftFields(form, draft.fields)
           form.dispatchEvent(new CustomEvent('wikidraftrestored'))
-          updateStatus('Rascunho local restaurado. Continue editando normalmente.')
+          updateStatus(ui("Rascunho local restaurado. Continue editando normalmente.", "Local draft restored. Continue editing."))
           form.elements.content?.focus()
           scheduleSave()
         }
@@ -1410,7 +1437,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
       removeEditorDraft(key)
       resetWarning()
-      updateStatus('Rascunho local descartado.')
+      updateStatus(ui("Rascunho local descartado.", "Local draft discarded."))
     })
 
     form.addEventListener('input', event => {
@@ -1512,24 +1539,24 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       modal.innerHTML = `
         <section class="editor-conflict-dialog">
           <header>
-            <h2>Esta página foi atualizada enquanto você editava</h2>
-            <p>Compare a sua versão com a versão mais recente publicada antes de continuar.</p>
+            <h2>${ui("Esta página foi atualizada enquanto você editava", "This page changed while you were editing")}</h2>
+            <p>${ui("Compare a sua versão com a versão mais recente publicada antes de continuar.", "Compare your edit with the latest published version before continuing.")}</p>
           </header>
           <div class="editor-conflict-grid">
             <div class="editor-conflict-pane">
-              <h3>Sua edição atual</h3>
+              <h3>${ui("Sua edição atual", "Your current edit")}</h3>
               <pre>${escapeHtml(draftContent || '')}</pre>
             </div>
             <div class="editor-conflict-pane">
-              <h3>Versão publicada mais recente</h3>
+              <h3>${ui("Versão publicada mais recente", "Latest published version")}</h3>
               <pre>${escapeHtml(latest?.content || '')}</pre>
             </div>
           </div>
           <footer>
-            <button class="primary-button" type="button" data-conflict-action="merge">Mesclar</button>
-            <button class="secondary-button" type="button" data-conflict-action="replace">Substituir</button>
-            <button class="secondary-button" type="button" data-conflict-action="ignore">Ignorar</button>
-            <button class="secondary-button" type="button" data-conflict-action="cancel">Cancelar</button>
+            <button class="primary-button" type="button" data-conflict-action="merge">${ui("Mesclar", "Merge")}</button>
+            <button class="secondary-button" type="button" data-conflict-action="replace">${ui("Substituir", "Replace")}</button>
+            <button class="secondary-button" type="button" data-conflict-action="ignore">${ui("Ignorar", "Ignore")}</button>
+            <button class="secondary-button" type="button" data-conflict-action="cancel">${ui("Cancelar", "Cancel")}</button>
           </footer>
         </section>
       `
@@ -1549,11 +1576,11 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           return
         }
         const labels = {
-          merge: 'mesclar a versão publicada com a sua edição atual',
-          replace: 'substituir a sua edição pela versão publicada mais recente',
-          ignore: 'ignorar a versão publicada mais recente e continuar com a sua edição'
+          merge: ui("mesclar a versão publicada com a sua edição atual", "merge the published version with your current edit"),
+          replace: ui("substituir a sua edição pela versão publicada mais recente", "replace your edit with the latest published version"),
+          ignore: ui("ignorar a versão publicada mais recente e continuar com a sua edição", "ignore the latest published version and continue with your edit")
         }
-        const ok = window.confirm(`Confirmar ${labels[action] || 'esta ação'}? Esta decisão não pode ser desfeita automaticamente.`)
+        const ok = window.confirm(`${ui('Confirmar', 'Confirm')} ${labels[action] || ui("esta ação", "this action")}${ui("? Esta decisão não pode ser desfeita automaticamente.", "? This decision cannot be undone automatically.")}`)
         if (ok) close(action)
       })
 
@@ -1563,22 +1590,33 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
   }
 
   async function resolveEditConflictBeforeSave(page, form, payload, note) {
-    if (!page || page.isNew || !page.currentRevisionId) return { proceed: true, payload }
+    payload = { ...payload, expectedRevisionId: page?.currentRevisionId || null }
+    if (!page) return { proceed: true, payload }
 
     const latest = await getPageFresh(page.slug)
-    if (!latest || latest.currentRevisionId === page.currentRevisionId) return { proceed: true, payload }
+    if (!latest || (!page.isNew && latest.currentRevisionId === page.currentRevisionId && latest.slug === page.slug && latest.title === page.title)) return { proceed: true, payload }
 
     const action = await createConflictModal({ page, latest, draftContent: payload.content })
+    payload.expectedRevisionId = latest.currentRevisionId
     if (action === 'cancel') return { proceed: false, payload }
 
+    const baseContent = page.content
+    const urlField = form.elements.urlSlug
+    if (latest.slug !== page.slug && readFormPayload(form).urlSlug === page.slug && urlField) {
+      const parts = editorUrlParts(latest.slug)
+      urlField.value = parts.value
+      const prefix = form.querySelector('.editor-url-prefix')
+      if (prefix) prefix.textContent = parts.prefix
+    }
+    Object.assign(page, latest, { isNew: false })
     if (action === 'replace') {
       applyLatestPageToForm(form, latest)
-      if (note) note.innerHTML = 'A edição local foi substituída pela versão publicada mais recente. Revise antes de salvar novamente.'
+      if (note) note.innerHTML = ui("A edição local foi substituída pela versão publicada mais recente. Revise antes de salvar novamente.", "Your edit was replaced with the latest published version. Review it before saving again.")
       return { proceed: false, payload }
     }
 
     if (action === 'merge') {
-      const merged = mergeEditorContent(page.content, latest.content, payload.content)
+      const merged = mergeEditorContent(baseContent, latest.content, payload.content)
       if (form.elements.content) form.elements.content.value = merged
       return {
         proceed: true,
@@ -1587,7 +1625,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           title: payload.title || latest.title,
           subtitle: payload.subtitle || latest.subtitle || '',
           content: merged,
-          summary: payload.summary || 'mesclada com revisão mais recente'
+          summary: payload.summary || ui("mesclada com revisão mais recente", "merged with latest revision")
         }
       }
     }
@@ -1643,7 +1681,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const title = form.elements.title?.value?.trim() || 'template'
 
     if (!render.trim()) {
-      preview.innerHTML = '<p class="empty-state">A prévia aparecerá aqui.</p>'
+      preview.innerHTML = `<p class="empty-state">${ui("A prévia aparecerá aqui.", "The preview will appear here.")}</p>`
       return
     }
 
@@ -1732,7 +1770,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const width = Math.min(420, Math.max(120, Number.parseInt(options.width || '260', 10) || 260))
     const src = file.contentUrl || `/api/files/${encodeURIComponent(file.slug || file.id)}/content`
     const details = file.pageUrl || `/wiki/arquivo/${file.slug || file.id}`
-    const caption = String(file.description || file.filename || file.slug || 'mídia').replace(/[\r\n]/g, ' ')
+    const caption = String(file.description || file.filename || file.slug || ui("mídia", "media")).replace(/[\r\n]/g, ' ')
     const alt = String(file.filename || caption).replace(/[\r\n]/g, ' ')
     const video = isVideoFile(file)
     const audio = isAudioFile(file)
@@ -1808,33 +1846,36 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           ${description ? `<span>${escapeHtml(description)}</span>` : ''}
           <code>${escapeHtml(file.slug || file.id || '')}</code>
         </div>
-        <button class="secondary-button" type="button" data-media-insert-file="${escapeHtml(file.slug || file.id || '')}">Inserir</button>
+        <button class="secondary-button" type="button" data-media-insert-file="${escapeHtml(file.slug || file.id || '')}">${ui("Inserir", "Insert")}</button>
       </article>
     `
   }
 
-  async function loadMediaLibrary(form) {
+  async function loadMediaLibrary(form, offset = 0) {
     const grid = form.querySelector('[data-media-library-grid]')
     const note = form.querySelector('[data-media-library-note]')
     const searchInput = form.querySelector('[data-media-search]')
     if (!grid) return []
 
-    grid.innerHTML = '<p class="upload-note">Carregando mídia enviada...</p>'
-    if (note) note.innerHTML = 'Consultando acervo de mídia.'
+    grid.innerHTML = `<p class="upload-note">${ui("Carregando mídia enviada...", "Loading uploaded media...")}</p>`
+    if (note) note.innerHTML = ui("Consultando acervo de mídia.", "Loading media library.")
 
     try {
-      const files = await listFiles({ search: searchInput?.value.trim() || '', limit: 80 })
+      const files = await listFiles({ search: searchInput?.value.trim() || '', limit: 80, offset })
       grid.dataset.files = JSON.stringify(files)
       grid.innerHTML = files.length
         ? files.map(mediaCardHtml).join('')
-        : '<p class="upload-note">Nenhum arquivo foi encontrado.</p>'
+        : `<p class="upload-note">${ui("Nenhum arquivo foi encontrado.", "No files found.")}</p>`
+      grid.insertAdjacentHTML('beforeend', paginationHtml(offset > 0, files.length === 80, 'media'))
+      grid.querySelector('[data-media-prev]')?.addEventListener('click', () => loadMediaLibrary(form, Math.max(0, offset - 80)))
+      grid.querySelector('[data-media-next]')?.addEventListener('click', () => loadMediaLibrary(form, offset + 80))
       if (note) note.innerHTML = files.length
-        ? `${files.length} arquivo(s) encontrado(s). Escolha como inserir antes de clicar em Inserir.`
-        : 'Nenhum arquivo encontrado para essa busca.'
+        ? `${files.length}${ui(" arquivo(s) encontrado(s). Escolha como inserir antes de clicar em Inserir.", " file(s) found. Choose an insertion mode before clicking Insert.")}`
+        : ui("Nenhum arquivo encontrado para essa busca.", "No files found for this search.")
       return files
     } catch (error) {
-      grid.innerHTML = `<p class="upload-note">Não foi possível carregar a mídia. ${escapeHtml(error.message || '')}</p>`
-      if (note) note.innerHTML = 'A listagem de mídia exige acesso de editor.'
+      grid.innerHTML = `<p class="upload-note">${ui("Não foi possível carregar a mídia. ", "Could not load media. ")}${escapeHtml(error.message || '')}</p>`
+      if (note) note.innerHTML = ui("A listagem de mídia exige acesso de editor.", "The media library requires editor access.")
       return []
     }
   }
@@ -1861,7 +1902,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           <span>${escapeHtml(template.description || '')}</span>
           <small>${escapeHtml(group)} · ${escapeHtml(kind)} · ${escapeHtml(template.minRole || 'guest')}</small>
         </div>
-        <button class="secondary-button compact-button" type="button" data-template-insert="${escapeHtml(template.id || template.slug || '')}">Inserir</button>
+        <button class="secondary-button compact-button" type="button" data-template-insert="${escapeHtml(template.id || template.slug || '')}">${ui("Inserir", "Insert")}</button>
       </article>
     `
   }
@@ -1882,27 +1923,27 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const note = form.querySelector('[data-template-gallery-note]')
     if (!grid) return []
 
-    grid.innerHTML = '<p class="upload-note">Carregando templates...</p>'
+    grid.innerHTML = `<p class="upload-note">${ui("Carregando templates...", "Loading templates...")}</p>`
     if (note) note.innerHTML = 'Consultando galeria de templates.'
 
     try {
       const templates = await listTemplates({ secure: Boolean(currentUser.canEdit) })
       grid.dataset.templates = JSON.stringify(templates)
-      const groups = Array.from(new Set(templates.map(template => template.groupName || 'Geral'))).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      const groups = Array.from(new Set(templates.map(template => template.groupName || 'Geral'))).sort((a, b) => a.localeCompare(b, interfaceLocale()))
       if (groupSelect) {
         const current = groupSelect.value
-        groupSelect.innerHTML = '<option value="">Todos</option>' + groups.map(group => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join('')
+        groupSelect.innerHTML = `<option value="">${ui("Todos", "All")}</option>` + groups.map(group => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join('')
         groupSelect.value = groups.includes(current) ? current : ''
       }
       grid.innerHTML = templates.length
         ? templates.map(templateCardHtml).join('')
-        : '<p class="upload-note">Nenhum template disponível para seu nível de acesso.</p>'
-      if (note) note.innerHTML = templates.length ? `${templates.length} template(s) disponível(is).` : 'Nenhum template disponível.'
+        : `<p class="upload-note">${ui("Nenhum template disponível para seu nível de acesso.", "No templates available for your access level.")}</p>`
+      if (note) note.innerHTML = templates.length ? `${templates.length}${ui(" template(s) disponível(is).", " available template(s).")}` : ui("Nenhum template disponível.", "No templates available.")
       filterTemplateCards(form)
       return templates
     } catch (error) {
-      grid.innerHTML = `<p class="upload-note">Não foi possível carregar os templates. ${escapeHtml(error.message || '')}</p>`
-      if (note) note.innerHTML = 'A API de templates não respondeu corretamente.'
+      grid.innerHTML = `<p class="upload-note">${ui("Não foi possível carregar os templates. ", "Could not load templates. ")}${escapeHtml(error.message || '')}</p>`
+      if (note) note.innerHTML = ui("A API de templates não respondeu corretamente.", "The templates API returned an invalid response.")
       return []
     }
   }
@@ -1924,7 +1965,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       const templates = JSON.parse(form.querySelector('[data-template-grid]')?.dataset.templates || '[]')
       const template = templates.find(item => String(item.id || item.slug) === insert.dataset.templateInsert)
       if (!template) {
-        note.innerHTML = 'Não foi possível encontrar o template selecionado.'
+        note.innerHTML = ui("Não foi possível encontrar o template selecionado.", "Could not find the selected template.")
         return
       }
 
@@ -1975,11 +2016,11 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           width: form.querySelector('[data-video-url-width]')?.value || '260'
         })
         if (!snippet) {
-          if (note) note.innerHTML = 'Cole um link de vídeo antes de inserir.'
+          if (note) note.innerHTML = ui("Cole um link de vídeo antes de inserir.", "Paste a video link before inserting.")
           return
         }
         insertAtCursor(form.elements.content, snippet)
-        if (note) note.innerHTML = 'Vídeo por link inserido no Markdown.'
+        if (note) note.innerHTML = ui("Vídeo por link inserido no Markdown.", "Video link inserted into Markdown.")
         return
       }
 
@@ -1995,7 +2036,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           width: form.querySelector('[data-audio-url-width]')?.value || '260'
         })
         if (!snippet) {
-          if (note) note.innerHTML = 'Cole um link de áudio antes de inserir.'
+          if (note) note.innerHTML = ui("Cole um link de áudio antes de inserir.", "Paste an audio link before inserting.")
           return
         }
         insertAtCursor(form.elements.content, snippet)
@@ -2011,7 +2052,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       const files = JSON.parse(grid?.dataset.files || '[]')
       const file = files.find(item => String(item.slug || item.id) === slug)
       if (!file) {
-        note.innerHTML = 'Não foi possível encontrar a imagem selecionada na listagem atual.'
+        note.innerHTML = ui("Não foi possível encontrar a imagem selecionada na listagem atual.", "Could not find the selected image in the current list.")
         return
       }
 
@@ -2022,7 +2063,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       })
       insertAtCursor(form.elements.content, snippet)
       const libraryNote = form.querySelector('[data-media-library-note]')
-      if (libraryNote) libraryNote.innerHTML = `Arquivo “${escapeHtml(file.filename || file.slug)}” inserido no Markdown.`
+      if (libraryNote) libraryNote.innerHTML = `${ui("Arquivo “", "File “")}${escapeHtml(file.filename || file.slug)}” inserido no Markdown.`
     })
 
     const searchInput = form.querySelector('[data-media-search]')
@@ -2107,12 +2148,12 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
     async function uploadAndInsert({ button, file, caption, description, align = 'right', width = '260', mode = 'thumb', noteTarget }) {
       if (!file) {
-        if (noteTarget) noteTarget.innerHTML = 'Selecione um arquivo antes de enviar.'
+        if (noteTarget) noteTarget.innerHTML = ui("Selecione um arquivo antes de enviar.", "Select a file before uploading.")
         return
       }
 
       button.disabled = true
-      if (noteTarget) noteTarget.innerHTML = 'Enviando arquivo para o acervo...'
+      if (noteTarget) noteTarget.innerHTML = ui("Enviando arquivo para o acervo...", "Uploading file to the library...")
 
       try {
         const result = await uploadImage(file, { caption, description, align, width })
@@ -2121,13 +2162,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const pageLink = result.file?.pageUrl || ''
         if (noteTarget) {
           noteTarget.innerHTML = pageLink
-            ? `Arquivo enviado e inserido no artigo. <a href="${escapeHtml(pageLink)}" data-link="route">Abrir página do arquivo</a>.`
-            : 'Arquivo enviado e inserido no artigo.'
+            ? `${ui("Arquivo enviado e inserido no artigo. ", "File uploaded and inserted into the article. ")}<a href="${escapeHtml(pageLink)}" data-link="route">${ui("Abrir página do arquivo", "Open file page")}</a>.`
+            : ui("Arquivo enviado e inserido no artigo.", "File uploaded and inserted into the article.")
         }
       } catch (error) {
-        const message = error?.message || 'erro desconhecido'
-        if (noteTarget) noteTarget.innerHTML = `Não foi possível enviar o arquivo. ${escapeHtml(message)}`
-        note.innerHTML = `Não foi possível enviar o arquivo. ${escapeHtml(message)}`
+        const message = error?.message || ui("erro desconhecido", "unknown error")
+        if (noteTarget) noteTarget.innerHTML = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${escapeHtml(message)}`
+        note.innerHTML = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${escapeHtml(message)}`
       } finally {
         button.disabled = false
       }
@@ -2185,7 +2226,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       try {
         await renderEditorPreview(page, form)
       } catch (error) {
-        note.innerHTML = `Não foi possível gerar a pré-visualização. ${escapeHtml(error.message || '')}`
+        note.innerHTML = `${ui("Não foi possível gerar a pré-visualização. ", "Could not generate the preview. ")}${escapeHtml(error.message || '')}`
       } finally {
         previewButton.disabled = false
       }
@@ -2205,12 +2246,12 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       slug,
       title,
       subtitle: isTalk
-        ? 'Página de discussão associada ao artigo.'
+        ? ui("Página de discussão associada ao artigo.", "Discussion page for the article.")
         : isUserPage
-          ? `Página de usuário de ${SITE_NAME}.`
+          ? `${ui("Página ", "Page ")}de usuário de ${SITE_NAME}.`
           : `${SITE_NAME} — ${SLOGAN}`,
       content: isTalk ? '## Discussão\n\nEscreva a primeira mensagem desta discussão.' : '',
-      categories: isTalk ? ['Discussões'] : isUserPage ? ['Usuários'] : [SITE_CONFIG.site?.defaultCategory || SITE_NAME],
+      categories: isTalk ? [ui("Discussões", "Discussions")] : isUserPage ? [ui("Usuários", "Users")] : [SITE_CONFIG.site?.defaultCategory || SITE_NAME],
       aliases: [],
       redirects: [],
       isNew: true
@@ -2222,25 +2263,24 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     if (!deleteButton) return
 
     deleteButton.addEventListener('click', async () => {
-      const ok = window.confirm(`Deletar a página “${page.title}”? Ela deixará de aparecer na leitura pública, busca e categorias.`)
+      const ok = window.confirm(`${ui("Deletar a página “", "Delete page “")}${page.title}${ui("”? Ela deixará de aparecer na leitura pública, busca e categorias.", "”? It will be removed from public reading, search and categories.")}`)
       if (!ok) return
 
-      const typed = window.prompt(`Digite ${page.slug} para confirmar a exclusão.`)
+      const typed = window.prompt(`Digite ${page.slug}${ui(" para confirmar a exclusão.", " to confirm deletion.")}`)
       if (typed !== page.slug) {
-        note.innerHTML = 'Exclusão cancelada. A confirmação não corresponde ao slug da página.'
+        note.innerHTML = ui("Exclusão cancelada. A confirmação não corresponde ao slug da página.", "Deletion cancelled. The confirmation does not match the page slug.")
         return
       }
 
       deleteButton.disabled = true
-      note.innerHTML = 'Deletando página...'
+      note.innerHTML = ui("Deletando página...", "Deleting page...")
 
       try {
         await deletePage(page.slug)
-        history.pushState(null, '', pageUrl(HOME_SLUG))
-        await renderRead(HOME_SLUG, ++routeSerial)
+        await navigate(pageUrl(HOME_SLUG))
       } catch (error) {
         deleteButton.disabled = false
-        note.innerHTML = `Não foi possível deletar a página. ${escapeHtml(error.message || '')}`
+        note.innerHTML = `${ui("Não foi possível deletar a página. ", "Could not delete the page. ")}${escapeHtml(error.message || '')}`
       }
     })
   }
@@ -2255,13 +2295,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     }
     if (isGeneratedSpecialSlug(slug)) {
       const info = specialPageInfo(slug) || { key: 'index', canonical: 'especial' }
-      history.replaceState(null, '', pageUrl(info.canonical))
+      history.replaceState(history.state, '', pageUrl(info.canonical))
       await renderSpecialPage(info, serial)
       return
     }
 
     if (!currentUser.canEdit) {
-      setDocumentTitle({ title: 'Edição restrita' })
+      setDocumentTitle({ title: ui("Edição restrita", "Restricted editing") })
       commitHtml(serial, accessRequiredHtml(slug, currentUser))
       return
     }
@@ -2287,23 +2327,24 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       event.preventDefault()
       if (form.dataset.saving === '1') return
       const { urlSlug, ...rawPayload } = readFormPayload(form)
-      const nextSlug = urlSlug || page.slug || slugify(rawPayload.title)
+      let nextSlug = urlSlug || page.slug || slugify(rawPayload.title)
       let saveProgressFinished = false
 
       try {
         const conflict = await resolveEditConflictBeforeSave(page, form, rawPayload, note)
         if (!conflict.proceed) return
 
-        setEditorSaving(form, true, 'Salvando...')
-        note.innerHTML = 'Salvando revisão... aguarde até o envio terminar.'
-        await savePage(nextSlug, conflict.payload)
+        setEditorSaving(form, true, ui("Salvando...", "Saving..."))
+        note.innerHTML = ui("Salvando revisão... aguarde até o envio terminar.", "Saving revision... please wait.")
+        nextSlug = readFormPayload(form).urlSlug || page.slug || nextSlug
+        await savePage(nextSlug, { ...conflict.payload, ...(page.isNew ? {} : { sourceSlug: page.slug }) })
         localDraft.clear()
         setEditorSaving(form, false)
         saveProgressFinished = true
-        history.pushState(null, '', pageUrl(nextSlug))
-        await renderRead(nextSlug, ++routeSerial)
+        await navigate(pageUrl(nextSlug))
       } catch (error) {
-        note.innerHTML = `Não foi possível salvar a revisão. ${escapeHtml(error.message || 'A API de escrita ainda não está disponível.')}`
+        if (error.status === 409) await resolveEditConflictBeforeSave(page, form, rawPayload, note)
+        note.innerHTML = `${ui("Não foi possível salvar a revisão. ", "Could not save the revision. ")}${escapeHtml(error.message || ui("A API de escrita ainda não está disponível.", "The editing API is unavailable."))}`
       } finally {
         if (!saveProgressFinished && isCurrentRoute(serial)) setEditorSaving(form, false)
       }
@@ -2319,14 +2360,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     }
     if (isGeneratedSpecialSlug(slug)) {
       const info = specialPageInfo(slug) || { key: 'index', canonical: 'especial' }
-      history.replaceState(null, '', pageUrl(info.canonical))
+      history.replaceState(history.state, '', pageUrl(info.canonical))
       await renderSpecialPage(info, serial)
       return
     }
     const page = await loadEditablePage(slug)
     if (!isCurrentRoute(serial)) return
 
-    setDocumentTitle(page, ' sugestão')
+    setDocumentTitle(page, ui(" sugestão", " suggestion"))
     updateChrome(page.slug, 'suggest')
     if (!commitHtml(serial, formHtml(page, 'suggest'))) return
 
@@ -2345,15 +2386,15 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       let saveProgressFinished = false
 
       try {
-        setEditorSaving(form, true, 'Enviando...')
-        note.innerHTML = 'Enviando proposta... aguarde até o envio terminar.'
+        setEditorSaving(form, true, ui("Enviando...", "Submitting..."))
+        note.innerHTML = ui("Enviando proposta... aguarde até o envio terminar.", "Submitting proposal... please wait.")
         const result = await submitEditProposal(nextSlug, payload)
         localDraft.clear()
         setEditorSaving(form, false)
         saveProgressFinished = true
         commitHtml(serial, proposalSubmittedHtml({ ...page, slug: nextSlug, title: payload.title }, result))
       } catch (error) {
-        note.innerHTML = `Não foi possível enviar a proposta. ${escapeHtml(error.message || 'A API de propostas ainda não está disponível.')}`
+        note.innerHTML = `${ui("Não foi possível enviar a proposta. ", "Could not submit the proposal. ")}${escapeHtml(error.message || ui("A API de propostas ainda não está disponível.", "The proposals API is unavailable."))}`
       } finally {
         if (!saveProgressFinished && isCurrentRoute(serial)) setEditorSaving(form, false)
       }
@@ -2382,28 +2423,32 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     }) || null
   }
 
-  async function renderSearch(query, serial) {
+  async function renderSearch(query, serial, offset = 0) {
     updateChrome(currentState().slug, currentState().mode)
-    setDocumentTitle({ title: `Busca por ${query}` })
+    setDocumentTitle({ title: ui(`Busca por ${query}`, `Search for ${query}`) })
     document.body.classList.add('is-searching')
 
     let results = []
+    let data
     try {
-      results = (await searchPages(query)).filter(pageVisibleByFeatures)
+      data = await getSearchPage(query, offset)
+      results = data.results.filter(pageVisibleByFeatures)
       if (!isCurrentRoute(serial)) return
     } finally {
       document.body.classList.remove('is-searching')
     }
 
     const exact = exactSearchResult(query, results)
-    if (exact?.slug && isCurrentRoute(serial)) {
+    if (!offset && exact?.slug && isCurrentRoute(serial)) {
       const fragment = String(exact.targetFragment || '').replace(/^#/, '')
-      history.replaceState(null, '', `${pageUrl(exact.slug)}${fragment ? `#${encodeURIComponent(fragment)}` : ''}`)
+      history.replaceState(history.state, '', `${pageUrl(exact.slug)}${fragment ? `#${encodeURIComponent(fragment)}` : ''}`)
       await renderRead(exact.slug, serial)
       return
     }
 
-    commitHtml(serial, searchHtml(query, results, currentUser))
+    commitHtml(serial, searchHtml(query, results, currentUser) + paginationHtml(offset > 0, data.nextOffset !== null, 'search'))
+    app.querySelector('[data-search-prev]')?.addEventListener('click', () => renderSearch(query, serial, Math.max(0, offset - 20)))
+    app.querySelector('[data-search-next]')?.addEventListener('click', () => renderSearch(query, serial, data.nextOffset))
   }
 
 
@@ -2415,12 +2460,12 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const dependencyDisabled = (info.key === 'categories' && !featureEnabled('categories')) || (info.key === 'randomPage' && !featureEnabled('randomPage'))
     if ((feature && !featureEnabled(feature)) || dependencyDisabled) {
       setDocumentTitle({ title: 'Recurso desativado' })
-      commitHtml(serial, featureDisabledHtml('Página especial desativada'))
+      commitHtml(serial, featureDisabledHtml(ui("Página especial desativada", "Special page disabled")))
       return
     }
 
     if (info.key === 'index') {
-      setDocumentTitle({ title: 'Especial: Páginas especiais' })
+      setDocumentTitle({ title: ui("Especial: Páginas especiais", "Special: Special pages") })
       commitHtml(serial, specialPagesIndexHtml())
       return
     }
@@ -2431,27 +2476,27 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       let page = null
       try { page = await getRandomPage() } catch {}
       const randomSlug = page?.slug || randomTitles[Math.floor(Math.random() * randomTitles.length)] || HOME_SLUG
-      history.replaceState(null, '', pageUrl(randomSlug))
+      history.replaceState(history.state, '', pageUrl(randomSlug))
       await renderRead(randomSlug, serial)
       return
     }
     if (info.key === 'version') return renderVersion(serial)
 
-    setDocumentTitle({ title: 'Página especial não encontrada' })
+    setDocumentTitle({ title: ui("Página especial não encontrada", "Special page not found") })
     commitHtml(serial, notFoundHtml(info.canonical, currentUser))
   }
 
   async function renderVersion(serial) {
     updateChrome('especial/versao', 'read')
-    setDocumentTitle({ title: 'WikiCambada Core — Versão' })
-    const status = await getSystemStatus().catch(() => ({}))
+    setDocumentTitle({ title: ui("WikiCambada Core — Versão", "WikiCambada Core — Version") })
+    const status = await getSystemStatus()
     if (!isCurrentRoute(serial)) return
     commitHtml(serial, versionPageHtml(status || {}))
   }
 
   async function renderAdminDashboard(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração' })
+    setDocumentTitle({ title: ui("Administração", "Administration") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2466,13 +2511,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminDashboardHtml({ pages: pagesData?.pages || [], maintenance, user: currentUser }))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar a administração. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a administração. ", "Could not load administration. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
-  async function renderAdminPages(serial = routeSerial) {
+  async function renderAdminPages(serial = routeSerial, offset = 0) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: páginas' })
+    setDocumentTitle({ title: ui("Administração: páginas", "Administration: pages") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2480,17 +2525,19 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     }
 
     try {
-      const pagesData = await listAdminPages()
+      const pagesData = await listAdminPages({ offset })
       if (!isCurrentRoute(serial)) return
-      if (commitHtml(serial, adminPagesHtml({ pages: pagesData?.pages || [], user: currentUser }))) enhanceAdminDataTables()
+      if (commitHtml(serial, adminPagesHtml({ pages: pagesData?.pages || [], user: currentUser }) + paginationHtml(offset > 0, pagesData.nextOffset !== null))) enhanceAdminDataTables()
+      app.querySelector('[data-pages-prev]')?.addEventListener('click', () => renderAdminPages(serial, Math.max(0, offset - 100)))
+      app.querySelector('[data-pages-next]')?.addEventListener('click', () => renderAdminPages(serial, pagesData.nextOffset))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar as páginas administrativas. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as páginas administrativas. ", "Could not load administrative pages. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminMaintenance(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: manutenção' })
+    setDocumentTitle({ title: ui("Administração: manutenção", "Administration: maintenance") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2502,13 +2549,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminMaintenanceHtml(maintenance))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar a manutenção. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a manutenção. ", "Could not load maintenance. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminBackup(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: backup e seed' })
+    setDocumentTitle({ title: ui("Administração: backup e seed", "Administration: content export and seed") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2520,7 +2567,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
   async function renderAdminRedirects(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: aliases e redirecionamentos' })
+    setDocumentTitle({ title: ui("Administração: aliases e redirecionamentos", "Administration: aliases and redirects") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2532,13 +2579,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminRedirectsHtml(data || {}))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar aliases e redirecionamentos. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar aliases e redirecionamentos. ", "Could not load aliases and redirects. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
-  async function renderAdminStorage(query = '', serial = routeSerial) {
+  async function renderAdminStorage(query = '', serial = routeSerial, offset = 0, cursor = '', cursors = []) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: armazenamento' })
+    setDocumentTitle({ title: ui("Administração: armazenamento", "Administration: storage") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2546,17 +2593,21 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     }
 
     try {
-      const data = await getStorageOverview({ search: query, limit: 200 })
+      const data = await getStorageOverview({ search: query, limit: 200, offset, cursor })
       if (!isCurrentRoute(serial)) return
-      if (commitHtml(serial, adminStorageHtml(data, query))) enhanceAdminDataTables()
+      if (commitHtml(serial, adminStorageHtml(data, query) + paginationHtml(offset > 0, data.nextOffset !== null, 'files') + paginationHtml(cursors.length > 0, Boolean(data.r2NextCursor), 'objects'))) enhanceAdminDataTables()
+      app.querySelector('[data-files-prev]')?.addEventListener('click', () => renderAdminStorage(query, serial, Math.max(0, offset - 200), cursor, cursors))
+      app.querySelector('[data-files-next]')?.addEventListener('click', () => renderAdminStorage(query, serial, data.nextOffset, cursor, cursors))
+      app.querySelector('[data-objects-prev]')?.addEventListener('click', () => renderAdminStorage(query, serial, offset, cursors.at(-1), cursors.slice(0, -1)))
+      app.querySelector('[data-objects-next]')?.addEventListener('click', () => renderAdminStorage(query, serial, offset, data.r2NextCursor, [...cursors, cursor]))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar o armazenamento. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar o armazenamento. ", "Could not load storage. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminIp(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: endereços IP' })
+    setDocumentTitle({ title: ui("Administração: endereços IP", "Administration: IP addresses") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2568,13 +2619,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminIpHtml(rules))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar as regras de IP. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as regras de IP. ", "Could not load IP rules. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminUsers(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: usuários' })
+    setDocumentTitle({ title: ui("Administração: usuários", "Administration: users") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2586,13 +2637,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminUsersHtml({ users: data?.users || [], currentUser }))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar usuários. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar ", "Could not load ")}${ui("usuários", "users")}. ${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminActivity(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: atividade' })
+    setDocumentTitle({ title: ui("Administração: atividade", "Administration: activity") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2604,13 +2655,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminActivityHtml(activity))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar atividade. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar atividade. ", "Could not load activity. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminTrash(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: lixeira' })
+    setDocumentTitle({ title: ui("Administração: lixeira", "Administration: trash") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2622,13 +2673,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminTrashHtml(trash))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar a lixeira. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a lixeira. ", "Could not load trash. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminSystem(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: sistema' })
+    setDocumentTitle({ title: ui("Administração: sistema", "Administration: system") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2640,14 +2691,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       commitHtml(serial, adminSystemHtml(status || {}))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar o sistema. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar o sistema. ", "Could not load system status. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
 
   async function renderAdminSettings(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: configurações globais' })
+    setDocumentTitle({ title: ui("Administração: configurações globais", "Administration: global settings") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2659,13 +2710,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       commitHtml(serial, adminSettingsHtml(settings || {}))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar as configurações globais. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as configurações globais. ", "Could not load global settings. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminTemplates(serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Administração: templates' })
+    setDocumentTitle({ title: ui("Administração: templates", "Administration: templates") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2677,13 +2728,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminTemplatesHtml(templates))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar templates. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar templates. ", "Could not load templates. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   async function renderAdminProposals(selectedId = '', serial = routeSerial) {
     updateChrome(HOME_SLUG, 'read')
-    setDocumentTitle({ title: 'Propostas de edição' })
+    setDocumentTitle({ title: ui("Propostas de edição", "Edit proposals") })
 
     if (!currentUser.canEdit) {
       commitHtml(serial, accessRequiredHtml(HOME_SLUG, currentUser))
@@ -2695,14 +2746,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminProposalsHtml(data, selectedId))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">Não foi possível carregar as propostas. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as propostas. ", "Could not load proposals. ")}${escapeHtml(error.message || '')}</p>`)
     }
   }
 
   function renderFatalError(error, serial = routeSerial) {
     console.error(error)
-    setDocumentTitle({ title: 'Erro de carregamento' })
-    commitHtml(serial, fatalErrorHtml())
+    setDocumentTitle({ title: ui("Erro de carregamento", "Loading error") })
+    commitHtml(serial, fatalErrorHtml(error))
   }
 
   async function refreshRandomTitles() {
@@ -2717,6 +2768,8 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
   async function route({ scrollToTop = false } = {}) {
     const serial = ++routeSerial
+    const entry = currentEntry()
+    pendingScroll = { serial, top: scrollPositions.get(entry) ?? (scrollToTop || window.location.hash ? undefined : window.scrollY) }
     app.setAttribute('aria-busy', 'true')
     startRouteProgress()
 
@@ -2724,8 +2777,8 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       const state = currentState()
 
       if (state.mode === 'search' && !featureEnabled('search')) {
-        setDocumentTitle({ title: 'Busca desativada' })
-        commitHtml(serial, featureDisabledHtml('Busca desativada'))
+        setDocumentTitle({ title: ui('Busca desativada', 'Search disabled') })
+        commitHtml(serial, featureDisabledHtml(ui('Busca desativada', 'Search disabled')))
         return
       }
 
@@ -2741,26 +2794,26 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       }
 
       if (state.mode === 'read' && isGeneratedSpecialSlug(state.slug)) {
-        setDocumentTitle({ title: 'Página especial não encontrada' })
+        setDocumentTitle({ title: ui("Página especial não encontrada", "Special page not found") })
         commitHtml(serial, notFoundHtml(state.slug, currentUser))
         return
       }
 
       if (state.slug.startsWith('discussao/') && !featureEnabled('talkPages')) {
-        setDocumentTitle({ title: 'Discussões desativadas' })
-        commitHtml(serial, featureDisabledHtml('Páginas de discussão desativadas'))
+        setDocumentTitle({ title: ui("Discussões desativadas", "Discussions disabled") })
+        commitHtml(serial, featureDisabledHtml(ui("Páginas de discussão desativadas", "Discussion pages disabled")))
         return
       }
 
       if (state.slug.startsWith('usuario/') && !featureEnabled('userPages')) {
-        setDocumentTitle({ title: 'Páginas de usuário desativadas' })
-        commitHtml(serial, featureDisabledHtml('Páginas de usuário desativadas'))
+        setDocumentTitle({ title: ui("Páginas de usuário desativadas", "User pages disabled") })
+        commitHtml(serial, featureDisabledHtml(ui("Páginas de usuário desativadas", "User pages disabled")))
         return
       }
 
       if (state.mode === 'read' && state.slug.startsWith('categoria/') && !featureEnabled('categories')) {
-        setDocumentTitle({ title: 'Categorias desativadas' })
-        commitHtml(serial, featureDisabledHtml('Categorias desativadas'))
+        setDocumentTitle({ title: ui('Categorias desativadas', 'Categories disabled') })
+        commitHtml(serial, featureDisabledHtml(ui('Categorias desativadas', 'Categories disabled')))
         return
       }
 
@@ -2851,8 +2904,8 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       }
 
       if (state.mode === 'suggest' && !featureEnabled('publicSuggestions')) {
-        setDocumentTitle({ title: 'Sugestões desativadas' })
-        commitHtml(serial, featureDisabledHtml('Sugestões públicas desativadas'))
+        setDocumentTitle({ title: ui("Sugestões desativadas", "Suggestions disabled") })
+        commitHtml(serial, featureDisabledHtml(ui("Sugestões públicas desativadas", "Public suggestions disabled")))
         return
       }
 
@@ -2862,8 +2915,8 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       }
 
       if (state.mode === 'history' && !featureEnabled('pageHistory')) {
-        setDocumentTitle({ title: 'Histórico desativado' })
-        commitHtml(serial, featureDisabledHtml('Histórico público desativado'))
+        setDocumentTitle({ title: ui("Histórico desativado", "History disabled") })
+        commitHtml(serial, featureDisabledHtml(ui("Histórico público desativado", "Public history disabled")))
         return
       }
 
@@ -2879,7 +2932,6 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (isCurrentRoute(serial)) {
         app.setAttribute('aria-busy', 'false')
         finishRouteProgress()
-        if (!scrollToCurrentHash() && scrollToTop) window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
       }
     }
   }
@@ -2909,9 +2961,9 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     const cleanQuery = String(query || '').trim()
     const createSlug = slugify(cleanQuery)
     const canSuggest = featureEnabled('publicSuggestions')
-    const actionText = currentUser.authenticated ? 'Criar página' : 'Sugerir agora'
-    const actionMode = currentUser.authenticated ? 'edit' : 'suggest'
-    const canCreateFromSearch = currentUser.authenticated || canSuggest
+    const actionText = currentUser.canEdit ? ui("Criar página", "Create page") : ui('Sugerir agora', 'Suggest now')
+    const actionMode = currentUser.canEdit ? 'edit' : 'suggest'
+    const canCreateFromSearch = currentUser.canEdit || canSuggest
     const exact = exactSearchResult(cleanQuery, results)
 
     box.innerHTML = `
@@ -2923,7 +2975,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           <button class="search-suggestion-item" type="button" data-search-suggestion-slug="${escapeHtml(page.slug)}" data-search-suggestion-fragment="${escapeHtml(page.targetFragment || '')}">
             <span class="search-suggestion-icon">${escapeHtml(icon)}</span>
             <span class="search-suggestion-main">
-              <strong>${escapeHtml(title || page.slug || 'Página sem título')}</strong>
+              <strong>${escapeHtml(title || page.slug || ui("Página sem título", "Untitled page"))}</strong>
               <small>${escapeHtml(page.exact ? `${page.matchType || 'resultado'} exato` : subtitle)}</small>
             </span>
           </button>
@@ -2997,12 +3049,26 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
   function navigate(url) {
     hideSearchSuggestions()
-    history.pushState(null, '', url)
-    route({ scrollToTop: true })
+    rememberScroll()
+    history.pushState({ wikiEntry: crypto.randomUUID() }, '', url)
+    return navigateToEntry()
+  }
+
+  function navigateToEntry() {
+    if (displayedPath !== pathAndQuery()) return route({ scrollToTop: true })
+    if (app.getAttribute('aria-busy') === 'true') {
+      routeSerial++
+      pendingScroll = null
+      app.setAttribute('aria-busy', 'false')
+      finishRouteProgress()
+    }
+    positionPage(scrollPositions.get(currentEntry()))
   }
 
   function bindEvents() {
     setupSearchSuggestions()
+    history.scrollRestoration = 'manual'
+    window.addEventListener('scroll', rememberScroll, { passive: true })
 
     document.addEventListener('input', event => {
       const form = event.target.closest?.('[data-template-form]')
@@ -3018,16 +3084,17 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
         const revisionNumber = restoreTarget.dataset.restoreRevision
         const slug = restoreTarget.dataset.slug || currentState().slug
-        const summary = window.prompt('Resumo da restauração', `restaurada revisão ${revisionNumber}`)
+        const defaultSummary = `${ui('restaurada revisão', 'restored revision')} ${revisionNumber}`
+        const summary = window.prompt(ui("Resumo da restauração", "Restoration summary"), defaultSummary)
         if (summary === null) return
 
         restoreTarget.disabled = true
         try {
-          await restoreRevision(slug, revisionNumber, summary.trim() || `restaurada revisão ${revisionNumber}`)
+          await restoreRevision(slug, revisionNumber, summary.trim() || defaultSummary, restoreTarget.dataset.baseRevision || null)
           navigate(pageUrl(slug))
         } catch (error) {
           restoreTarget.disabled = false
-          window.alert(`Não foi possível restaurar a revisão. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível restaurar a revisão. ", "Could not restore the revision. ")}${error.message || ''}`)
         }
         return
       }
@@ -3044,7 +3111,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
           advancedRedirectDelete.disabled = false
-          window.alert(`Não foi possível remover o redirecionamento. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover o redirecionamento. ", "Could not remove the redirect. ")}${error.message || ''}`)
         }
         return
       }
@@ -3060,7 +3127,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
           advancedAliasDelete.disabled = false
-          window.alert(`Não foi possível remover o alias. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover o alias. ", "Could not remove the alias. ")}${error.message || ''}`)
         }
         return
       }
@@ -3074,17 +3141,18 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
         let payload = { action }
         if (action === 'delete') {
-          if (!window.confirm(`Apagar a página “${slug}”? O histórico não será removido.`)) return
+          if (!window.confirm(`${ui("Apagar a página “", "Delete page “")}${slug}${ui("”? O histórico não será removido.", "”? History will be preserved.")}`)) return
         }
         if (action === 'lock' || action === 'unlock') {
-          const verb = action === 'lock' ? 'bloquear' : 'desbloquear'
-          if (!window.confirm(`Confirmar ${verb} a página “${slug}”?`)) return
+          const verb = action === 'lock' ? ui('bloquear', 'lock') : ui('desbloquear', 'unlock')
+          if (!window.confirm(`${ui('Confirmar', 'Confirm')} ${verb}${ui(" a página “", " page “")}${slug}”?`)) return
         }
         if (action === 'rename') {
-          const title = window.prompt('Novo título da página')
+          const title = window.prompt(ui("Novo título da página", "New page title"))
           if (!title) return
-          const nextSlug = window.prompt('Novo slug', slugify(title)) || slugify(title)
-          const summary = window.prompt('Resumo da renomeação', `renomeada de ${slug} para ${nextSlug}`) || `renomeada de ${slug} para ${nextSlug}`
+          const nextSlug = window.prompt(ui('Novo slug', 'New slug'), slugify(title)) || slugify(title)
+          const defaultSummary = ui(`renomeada de ${slug} para ${nextSlug}`, `renamed from ${slug} to ${nextSlug}`)
+          const summary = window.prompt(ui("Resumo da renomeação", "Rename summary"), defaultSummary) || defaultSummary
           payload = { action, title: title.trim(), slug: nextSlug.trim(), summary }
         }
 
@@ -3094,7 +3162,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminPages(++routeSerial)
         } catch (error) {
           adminAction.disabled = false
-          window.alert(`Ação administrativa falhou. ${error.message || ''}`)
+          window.alert(`${ui("Ação administrativa falhou. ", "Administrative operation failed. ")}${error.message || ''}`)
         }
         return
       }
@@ -3106,7 +3174,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         if (!slug) return
         const filename = window.prompt('Nome do arquivo', storageFileEdit.dataset.filename || '')
         if (filename === null) return
-        const description = window.prompt('Descrição do arquivo', storageFileEdit.dataset.description || '')
+        const description = window.prompt(ui("Descrição do arquivo", "File description"), storageFileEdit.dataset.description || '')
         if (description === null) return
 
         storageFileEdit.disabled = true
@@ -3115,7 +3183,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminStorage(currentState().query, ++routeSerial)
         } catch (error) {
           storageFileEdit.disabled = false
-          window.alert(`Não foi possível atualizar o arquivo. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível atualizar o arquivo. ", "Could not update the file. ")}${error.message || ''}`)
         }
         return
       }
@@ -3133,7 +3201,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminStorage(currentState().query, ++routeSerial)
         } catch (error) {
           storageFileDelete.disabled = false
-          window.alert(`Não foi possível deletar o arquivo. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível deletar o arquivo. ", "Could not delete the file. ")}${error.message || ''}`)
         }
         return
       }
@@ -3144,17 +3212,17 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const ip = quickIp.dataset.ip
         const action = quickIp.dataset.adminIpQuick
         if (!ip || !action) return
-        const label = action === 'ban_site' ? 'banir acesso público ao site' : 'bloquear sugestões públicas'
-        if (!window.confirm(`Confirmar ${label} para ${ip}?`)) return
+        const label = action === 'ban_site' ? ui("banir acesso público ao site", "ban public access to the site") : ui("bloquear sugestões públicas", "block public suggestions")
+        if (!window.confirm(ui(`Confirmar ${label} para ${ip}?`, `Confirm ${label} for ${ip}?`))) return
 
         quickIp.disabled = true
         try {
-          await createIpRule({ ip, action, reason: 'regra criada a partir de proposta de edição' })
+          await createIpRule({ ip, action, reason: ui("regra criada a partir de proposta de edição", "rule created from an edit proposal") })
           window.alert('Regra de IP criada.')
           await renderAdminProposals(currentState().query, ++routeSerial)
         } catch (error) {
           quickIp.disabled = false
-          window.alert(`Não foi possível criar a regra de IP. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível criar a regra de IP. ", "Could not create the IP rule. ")}${error.message || ''}`)
         }
         return
       }
@@ -3172,7 +3240,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminIp(++routeSerial)
         } catch (error) {
           ipDelete.disabled = false
-          window.alert(`Não foi possível remover a regra. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover a regra. ", "Could not remove the rule. ")}${error.message || ''}`)
         }
         return
       }
@@ -3184,11 +3252,11 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         try {
           const id = proposalAction.dataset.id
           const credit = document.querySelector(`select[data-proposal-credit][data-id="${CSS.escape(id || '')}"]`)?.value || 'contact'
-          await moderateProposal(id, proposalAction.dataset.proposalAction, { creditMode: credit })
+          await moderateProposal(id, proposalAction.dataset.proposalAction, { creditMode: credit, expectedRevisionId: proposalAction.dataset.baseRevision || null })
           await renderAdminProposals()
         } catch (error) {
           proposalAction.disabled = false
-          window.alert(`Não foi possível revisar a proposta. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível revisar a proposta. ", "Could not review the proposal. ")}${error.message || ''}`)
         }
         return
       }
@@ -3211,14 +3279,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         event.preventDefault()
         const email = userDelete.dataset.email || ''
         if (!email) return
-        if (!window.confirm(`Remover o usuário “${email}” do painel? O histórico de edições não será apagado.`)) return
+        if (!window.confirm(`${ui("Remover o usuário “", "Remove user “")}${email}${ui("” do painel? O histórico de edições não será apagado.", "” from the panel? Revision history will be preserved.")}`)) return
         userDelete.disabled = true
         try {
           await deleteAdminUser(email)
           await renderAdminUsers(++routeSerial)
         } catch (error) {
           userDelete.disabled = false
-          window.alert(`Não foi possível remover usuário. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover usuário. ", "Could not remove user. ")}${error.message || ''}`)
         }
         return
       }
@@ -3230,14 +3298,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const kind = trashButton.dataset.kind
         const slug = trashButton.dataset.slug
         if (!action || !kind || !slug) return
-        if (action === 'hard-delete' && !window.confirm(`Remover definitivamente “${slug}”? Essa ação não poderá ser desfeita.`)) return
+        if (action === 'hard-delete' && !window.confirm(`${ui('Remover definitivamente', 'Permanently remove')} “${slug}${ui("”? Essa ação não poderá ser desfeita.", "”? This action cannot be undone.")}`)) return
         trashButton.disabled = true
         try {
           await trashAction({ action, kind, slug })
           await renderAdminTrash(++routeSerial)
         } catch (error) {
           trashButton.disabled = false
-          window.alert(`Ação da lixeira falhou. ${error.message || ''}`)
+          window.alert(`${ui("Ação da lixeira falhou. ", "Trash operation failed. ")}${error.message || ''}`)
         }
         return
       }
@@ -3251,7 +3319,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminTrash(++routeSerial)
         } catch (error) {
           purgeExpired.disabled = false
-          window.alert(`Não foi possível apagar expirados. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível apagar expirados. ", "Could not purge expired items. ")}${error.message || ''}`)
         }
         return
       }
@@ -3261,8 +3329,8 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         event.preventDefault()
         const action = systemAction.dataset.systemAction
         const confirmText = action === 'force-reload'
-          ? 'Forçar recarregamento completo dos clientes abertos?'
-          : 'Forçar atualização de cache local dos clientes?'
+          ? ui("Forçar recarregamento completo dos clientes abertos?", "Force open clients to reload?")
+          : ui("Forçar atualização de cache local dos clientes?", "Force clients to refresh their local cache?")
         if (!window.confirm(confirmText)) return
         systemAction.disabled = true
         try {
@@ -3270,7 +3338,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminSystem(++routeSerial)
         } catch (error) {
           systemAction.disabled = false
-          window.alert(`Ação de sistema falhou. ${error.message || ''}`)
+          window.alert(`${ui("Ação de sistema falhou. ", "System operation failed. ")}${error.message || ''}`)
         }
         return
       }
@@ -3287,7 +3355,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminActivity(++routeSerial)
         } catch (error) {
           clearActivity.disabled = false
-          window.alert(`Não foi possível limpar a atividade. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível limpar a atividade. ", "Could not clear activity. ")}${error.message || ''}`)
         }
         return
       }
@@ -3353,7 +3421,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminTemplates(++routeSerial)
         } catch (error) {
           templateToggle.disabled = false
-          window.alert(`Não foi possível atualizar o template. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível atualizar o template. ", "Could not update the template. ")}${error.message || ''}`)
         }
         return
       }
@@ -3363,14 +3431,14 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         event.preventDefault()
         const id = templateDelete.dataset.templateId
         if (!id) return
-        if (!window.confirm('Deletar este template? Ele deixará de aparecer na galeria do editor.')) return
+        if (!window.confirm(ui("Deletar este template? Ele deixará de aparecer na galeria do editor.", "Delete this template? It will be removed from the editor gallery."))) return
         templateDelete.disabled = true
         try {
           await deleteAdminTemplate(id)
           await renderAdminTemplates(++routeSerial)
         } catch (error) {
           templateDelete.disabled = false
-          window.alert(`Não foi possível deletar o template. ${error.message || ''}`)
+          window.alert(`${ui("Não foi possível deletar o template. ", "Could not delete the template. ")}${error.message || ''}`)
         }
         return
       }
@@ -3382,7 +3450,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         if (!form) return
         form.reset()
         form.elements.id.value = ''
-        form.elements.groupName.value = 'Manutenção'
+        form.elements.groupName.value = ui("Manutenção", "Maintenance")
         form.elements.kind.value = 'maintenance'
         form.elements.minRole.value = 'guest'
         form.elements.status.value = 'active'
@@ -3405,8 +3473,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const href = hashTarget.getAttribute('href') || ''
         if (href.length > 1) {
           event.preventDefault()
-          history.pushState(null, '', `${window.location.pathname}${window.location.search}${href}`)
-          scrollToCurrentHash()
+          navigate(`${pathAndQuery()}${href}`)
           return
         }
       }
@@ -3443,7 +3510,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       const slug = target.dataset.slug || currentState().slug
       const mode = target.dataset.link === 'edit' ? 'edit' : target.dataset.link === 'history' ? 'history' : target.dataset.link === 'suggest' ? 'suggest' : 'read'
       const url = new URL(target.href, window.location.origin)
-      navigate(`${pageUrl(slug, mode)}${url.hash || ''}`)
+      navigate(`${pageUrl(slug, mode)}${url.search}${url.hash}`)
     })
 
     searchForm.addEventListener('submit', async event => {
@@ -3482,13 +3549,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           target[parts[0]] = input.checked
         })
         if (button) button.disabled = true
-        if (note) note.textContent = 'Salvando configurações globais...'
+        if (note) note.textContent = ui("Salvando configurações globais...", "Saving global settings...")
         try {
           await saveAdminGlobalSettings(settings)
           await loadGlobalSettings()
-          if (note) note.textContent = 'Configurações globais salvas.'
+          if (note) note.textContent = ui("Configurações globais salvas.", "Global settings saved.")
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar. ", "Could not save. ")}${error.message || ''}`
         } finally {
           if (button) button.disabled = false
         }
@@ -3502,7 +3569,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const note = templateForm.querySelector('[data-template-note]')
         const button = templateForm.querySelector('button[type="submit"]')
         if (button) button.disabled = true
-        if (note) note.textContent = 'Salvando template...'
+        if (note) note.textContent = ui("Salvando template...", "Saving template...")
         try {
           await saveAdminTemplate({
             id: data.get('id')?.toString().trim() || '',
@@ -3522,7 +3589,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminTemplates(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar o template. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o template. ", "Could not save the template. ")}${error.message || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3535,7 +3602,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const note = advancedRedirectForm.querySelector('[data-advanced-redirect-note]')
         const button = advancedRedirectForm.querySelector('button[type="submit"]')
         if (button) button.disabled = true
-        if (note) note.textContent = 'Salvando redirecionamento...'
+        if (note) note.textContent = ui("Salvando redirecionamento...", "Saving redirect...")
         try {
           await saveAdvancedRedirect({
             fromSlug: data.get('fromSlug')?.toString().trim() || '',
@@ -3544,7 +3611,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar o redirecionamento. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o redirecionamento. ", "Could not save the redirect. ")}${error.message || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3557,7 +3624,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const note = advancedAliasForm.querySelector('[data-advanced-alias-note]')
         const button = advancedAliasForm.querySelector('button[type="submit"]')
         if (button) button.disabled = true
-        if (note) note.textContent = 'Salvando alias...'
+        if (note) note.textContent = ui("Salvando alias...", "Saving alias...")
         try {
           await saveAdvancedAlias({
             aliasTitle: data.get('aliasTitle')?.toString().trim() || '',
@@ -3565,7 +3632,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar o alias. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o alias. ", "Could not save the alias. ")}${error.message || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3587,11 +3654,11 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const button = ipForm.querySelector('button[type="submit"]')
         const ipValue = data.get('ip')?.toString().trim() || ''
         if (!isValidIpOrCidr(ipValue)) {
-          if (note) note.textContent = 'Informe um IPv4, IPv6 ou CIDR válido.'
+          if (note) note.textContent = ui("Informe um IPv4, IPv6 ou CIDR válido.", "Enter a valid IPv4, IPv6 or CIDR address.")
           return
         }
         if (button) button.disabled = true
-        if (note) note.textContent = 'Salvando regra...'
+        if (note) note.textContent = ui("Salvando regra...", "Saving rule...")
         try {
           await createIpRule({
             ip: ipValue,
@@ -3600,7 +3667,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminIp(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar a regra. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar a regra. ", "Could not save the rule. ")}${error.message || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3618,7 +3685,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           currentUser = await getCurrentUser(window.location.pathname + window.location.search)
           await renderAdminUsers(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar o perfil. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o perfil. ", "Could not save the profile. ")}${error.message || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3640,7 +3707,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminUsers(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `Não foi possível salvar usuário. ${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar usuário. ", "Could not save user. ")}${error.message || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3663,25 +3730,28 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       try {
         payload = JSON.parse(raw)
       } catch {
-        if (note) note.textContent = 'JSON inválido.'
+        if (note) note.textContent = ui("JSON inválido.", "Invalid JSON.")
         return
       }
 
-      if (!window.confirm('Importar este seed para o D1? Essa ação pode criar novas revisões.')) return
+      if (!window.confirm(ui("Importar este seed para o D1? Essa ação pode criar novas revisões.", "Import this content seed into D1? This may create new revisions."))) return
       if (button) button.disabled = true
       if (note) note.textContent = 'Importando...'
 
       try {
         const result = await importSeedBackup(payload)
-        if (note) note.textContent = `Importação concluída: ${result.imported?.length || 0} página(s), ${result.failed?.length || 0} falha(s).`
+        if (note) note.textContent = `${ui("Importação concluída: ", "Import completed: ")}${result.imported?.length || 0}${ui(" página(s), ", " page(s), ")}${result.failed?.length || 0}${ui(' falha(s).', ' failure(s).')}`
       } catch (error) {
-        if (note) note.textContent = `Não foi possível importar. ${error.message || ''}`
+        if (note) note.textContent = `${ui("Não foi possível importar. ", "Could not import. ")}${error.message || ''}`
       } finally {
         if (button) button.disabled = false
       }
     })
 
-    window.addEventListener('popstate', () => route({ scrollToTop: true }))
+    window.addEventListener('popstate', () => {
+      rememberScroll()
+      navigateToEntry()
+    })
   }
 
   function startSystemWatcher() {
@@ -3708,6 +3778,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         }
 
         if (cacheValue !== knownCache) {
+          clearPublicCache()
           knownCache = cacheValue
           await route({ scrollToTop: false })
         }

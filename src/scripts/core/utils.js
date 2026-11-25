@@ -1,4 +1,5 @@
 import { HOME_SLUG } from './config.js'
+import { interfaceLanguage, interfaceLocale } from './i18n.js'
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -35,12 +36,12 @@ export function titleFromSlug(slug) {
     .split('-')
     .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Página sem nome'
+    .join(' ') || (interfaceLanguage() === 'en' ? 'Untitled page' : 'Página sem nome')
 }
 
 export function formatDate(value) {
   try {
-    return new Intl.DateTimeFormat('pt-BR', {
+    return new Intl.DateTimeFormat(interfaceLocale(), {
       dateStyle: 'long',
       timeStyle: 'short'
     }).format(new Date(value))
@@ -88,12 +89,12 @@ export function pageUrl(slug, mode = 'read') {
 
 export function userPageSlug(value) {
   const clean = String(value || '').replace(/^Usu[aá]rio\s*:/i, '').replace(/^usuario\//i, '')
-  return `usuario/${slugify(clean)}`
+  return `usuario/${clean.split('/').filter(Boolean).map(slugify).join('/')}`
 }
 
 export function talkPageSlug(value) {
   const clean = String(value || '').replace(/^Discuss[aã]o\s*:/i, '').replace(/^Talk\s*:/i, '').replace(/^discussao\//i, '')
-  return `discussao/${slugify(clean)}`
+  return `discussao/${clean.split('/').filter(Boolean).map(slugify).join('/')}`
 }
 
 export function articleSlugFromTalk(slug) {

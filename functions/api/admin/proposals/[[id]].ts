@@ -12,7 +12,7 @@ function proposalId(value: string[] | string | undefined) {
 export async function onRequestGet({ request, env, params }: Context) {
   const user = await requireAccessUser(request, env)
   if (!user) return error('painel restrito a editores autorizados', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const id = proposalId(params.id)
   if (!id) {
@@ -30,14 +30,16 @@ export async function onRequestGet({ request, env, params }: Context) {
 export async function onRequestPost({ request, env, params }: Context) {
   const user = await requireAccessUser(request, env)
   if (!user) return error('painel restrito a editores autorizados', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado neste alpha', 501)
+  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
 
   const id = proposalId(params.id)
   if (!id) return error('proposta ausente', 400)
 
-  const input = await request.json().catch(() => ({})) as { action?: string, creditMode?: string }
+  const input = await request.json().catch(() => ({})) as { action?: string, creditMode?: string, expectedRevisionId?: string | null }
   if (input.action === 'approve') {
-    const result = await approveEditProposal(env, id, user.email, user.displayName || user.name, input.creditMode)
+    if (!Object.hasOwn(input, 'expectedRevisionId')) return error('revisão-base obrigatória', 428)
+    if (input.expectedRevisionId !== null && typeof input.expectedRevisionId !== 'string') return error('revisão-base inválida', 400)
+    const result = await approveEditProposal(env, id, user.email, user.displayName || user.name, input.creditMode, input.expectedRevisionId)
     if (!result) return error('proposta não encontrada ou já revisada', 404)
     return json({ ok: true, action: 'approved', ...result })
   }

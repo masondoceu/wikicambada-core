@@ -3,6 +3,23 @@ let viewerState = {
   index: 0
 }
 
+function safeViewerUrl(value, allowBlob = false) {
+  try {
+    const parsed = new URL(String(value || ''), window.location.href)
+    if (parsed.username || parsed.password) return ''
+    if (['http:', 'https:'].includes(parsed.protocol)) return parsed.href
+    if (allowBlob && parsed.protocol === 'blob:') return parsed.href
+  } catch {}
+  return ''
+}
+
+function safeEmbedUrl(value) {
+  const url = safeViewerUrl(value)
+  if (!url) return ''
+  const parsed = new URL(url)
+  return parsed.protocol === 'https:' && parsed.hostname === 'www.youtube-nocookie.com' && parsed.pathname.startsWith('/embed/') ? parsed.href : ''
+}
+
 function ensureViewer() {
   let viewer = document.querySelector('[data-media-viewer-root]')
   if (viewer) return viewer
@@ -118,12 +135,13 @@ function getTriggerType(trigger) {
 }
 
 function itemFromTrigger(trigger) {
-  const src = getTriggerSrc(trigger)
-  if (!src) return null
+  const src = safeViewerUrl(getTriggerSrc(trigger), true)
+  const embed = safeEmbedUrl(trigger.dataset.mediaEmbed || '')
+  if (!src && !embed) return null
   const caption = trigger.dataset.mediaCaption || ''
   return {
     src,
-    embed: trigger.dataset.mediaEmbed || '',
+    embed,
     type: getTriggerType(trigger),
     title: mediaTitleFromTrigger(trigger, caption),
     caption,
@@ -146,9 +164,10 @@ function collectMediaItems(trigger) {
 }
 
 function mediaNodeForItem(item) {
-  if (item.embed) {
+  const embed = safeEmbedUrl(item.embed)
+  if (embed) {
     const iframe = document.createElement('iframe')
-    iframe.src = item.embed
+    iframe.src = embed
     iframe.title = item.title || item.caption || 'vídeo incorporado'
     iframe.loading = 'lazy'
     iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
@@ -159,7 +178,7 @@ function mediaNodeForItem(item) {
 
   const type = item.type === 'audio' ? 'audio' : item.type === 'video' ? 'video' : 'img'
   const media = document.createElement(type)
-  media.src = item.src
+  media.src = safeViewerUrl(item.src, true)
   media.draggable = false
   media.setAttribute('data-media-viewer-media', '')
   if (type === 'video' || type === 'audio') {
@@ -197,19 +216,25 @@ function renderViewerItem() {
   if (details) {
     const inferredDetails = fileDetailsFromContentUrl(item.src)
     const explicitDetails = item.details || ''
-    const detailsUrl = explicitDetails && !isContentUrl(explicitDetails) ? explicitDetails : inferredDetails || explicitDetails || item.src
+    const candidate = explicitDetails && !isContentUrl(explicitDetails) ? explicitDetails : inferredDetails || explicitDetails || item.src
+    const detailsUrl = safeViewerUrl(candidate)
     details.hidden = false
-    details.href = detailsUrl
+    details.href = detailsUrl || '#'
     details.textContent = 'Mais detalhes'
 
-    if (detailsUrl && detailsUrl !== item.src && !isContentUrl(detailsUrl)) {
+    if (detailsUrl && new URL(detailsUrl).origin === window.location.origin && detailsUrl !== item.src && !isContentUrl(detailsUrl)) {
       details.setAttribute('data-link', 'route')
       details.removeAttribute('target')
       details.removeAttribute('rel')
     } else {
       details.removeAttribute('data-link')
-      details.target = '_blank'
-      details.rel = 'noreferrer'
+      if (detailsUrl) {
+        details.target = '_blank'
+        details.rel = 'noreferrer'
+      } else {
+        details.removeAttribute('target')
+        details.removeAttribute('rel')
+      }
     }
   }
 
@@ -260,15 +285,10 @@ export function bootMediaViewer() {
     close: closeViewer
   }
 
-  document.addEventListener('pointerdown', event => {
-    const trigger = mediaTriggerFromEventTarget(event.target)
-    if (!trigger || shouldIgnoreMediaTarget(event.target)) return
-    if (event.button !== undefined && event.button !== 0) return
-    event.preventDefault()
-  }, true)
-
   document.addEventListener('click', event => {
-    if (event.target.closest?.('[data-media-details]')) {
+    if (event.button !== 0) return
+
+    if (event.target.closest?.('[data-media-viewer-root] a[data-media-details]')) {
       closeViewer()
       return
     }
@@ -315,13 +335,6 @@ export function bootMediaViewer() {
     if (!event.target.closest?.('[data-media-viewer]')) return
     event.preventDefault()
     event.stopPropagation()
-  }, true)
-
-  document.addEventListener('contextmenu', event => {
-    const trigger = mediaTriggerFromEventTarget(event.target)
-    if (!trigger || isViewerOpen()) return
-    event.preventDefault()
-    consumeAndOpen(event, trigger)
   }, true)
 
   document.addEventListener('keydown', event => {

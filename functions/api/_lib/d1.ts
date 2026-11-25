@@ -4,6 +4,11 @@ export type Env = {
   ACCESS_TEAM_DOMAIN?: string
   ACCESS_AUD?: string
   ACCESS_STRICT?: string
+  WIKI_DEV_AUTH?: string
+  DEV_BYPASS_AUTH?: string
+  WIKI_LOCAL_AUTH_SECRET?: string
+  WIKI_INITIAL_CONTENT?: string
+  WIKI_ACCESS_MODE?: string
   DISCORD_EDIT_WEBHOOK_URL?: string
   PUBLIC_BASE_URL?: string
   WIKI_CORE_VERSION?: string
@@ -17,7 +22,13 @@ export type RedirectRuleInput = {
   fragment?: string
 }
 
+export class EditorialError extends Error {
+  constructor(message: string, public status = 409) { super(message) }
+}
+
 export type PageInput = {
+  expectedRevisionId?: string | null
+  sourceSlug?: string
   title: string
   subtitle?: string
   content: string
@@ -29,6 +40,7 @@ export type PageInput = {
 }
 
 type PageListOptions = {
+  offset?: number
   sort?: 'title' | 'recent'
   limit?: number
   includeDeleted?: boolean
@@ -358,7 +370,7 @@ async function nextFileSlug(env: Env, filename: string, fallbackId: string, pref
   let index = 2
 
   while (await fileSlugExists(env, candidate)) {
-    if (requested) throw new Error('já existe um arquivo com essa URL')
+    if (requested) throw new EditorialError('já existe um arquivo com essa URL', 409)
     candidate = `${base}-${index}`
     index += 1
   }
@@ -534,7 +546,7 @@ async function readPageRevisionSummaries(env: Env, pageId: string) {
     SELECT
       id,
       revision_number AS revisionNumber,
-      author_email AS author,
+      COALESCE(author_name, 'editor') AS author,
       author_name AS authorName,
       summary,
       created_at AS createdAt
@@ -551,7 +563,7 @@ async function hydratePage(env: Env, page: any, source: Record<string, any> = {}
   if (!page) return null
 
   const [revisions, categories, aliases, redirectRules] = await Promise.all([
-    readPageRevisionSummaries(env, page.id),
+    (await globalSettingEnabled(env, 'pageHistory')) ? readPageRevisionSummaries(env, page.id) : Promise.resolve([]),
     readPageCategories(env, page.id),
     readPageAliases(env, page.id),
     readPageRedirectRules(env, page.slug)
@@ -605,12 +617,47 @@ async function resolveAlias(env: Env, slug: string) {
   return null
 }
 
+function pageVisibilitySql(settings: Record<string, any>) {
+  const filters = ["pages.slug NOT IN ('especial', 'special', 'arquivo')", "pages.slug NOT LIKE 'especial/%'", "pages.slug NOT LIKE 'special/%'", "pages.slug NOT LIKE 'arquivo/%'"]
+  for (const [namespace, key] of [['discussao', 'talkPages'], ['usuario', 'userPages'], ['categoria', 'categories']]) {
+    if (!nestedSettingValue(settings, key)) filters.push(`pages.slug NOT LIKE '${namespace}/%'`)
+  }
+  return filters.join(' AND ')
+}
+
+export async function pageListStats(env: Env, includeDeleted = false) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  const filter = includeDeleted ? "pages.status IN ('published', 'deleted', 'draft')" : "pages.status = 'published' AND " + pageVisibilitySql(await getGlobalSettings(env))
+  return env.DB.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM((SELECT COUNT(*) FROM revisions WHERE page_id = pages.id)), 0) AS revisions FROM pages WHERE ${filter}`).first<{ total: number, revisions: number }>()
+}
+
+export async function lookupPageSlugs(env: Env, values: string[]) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!values.length) return []
+  const settings = await getGlobalSettings(env)
+  const wanted = values.map(normalizeSlug)
+  const visibility = pageVisibilitySql(settings)
+  const sourceVisibility = visibility.replaceAll('pages.slug', 'wanted.slug')
+  const rows = await env.DB.prepare(`WITH wanted(slug) AS (VALUES ${wanted.map(() => '(?)').join(',')})
+    SELECT DISTINCT wanted.slug FROM wanted
+    LEFT JOIN page_aliases ON page_aliases.alias_slug = wanted.slug
+    LEFT JOIN redirects ON redirects.from_slug = wanted.slug
+    JOIN pages ON pages.slug = wanted.slug OR pages.id = page_aliases.page_id OR pages.slug = redirects.to_slug
+    WHERE pages.status = 'published' AND ${visibility} AND ${sourceVisibility}
+    UNION SELECT wanted.slug FROM wanted JOIN categories ON wanted.slug = 'categoria/' || categories.slug
+    WHERE ${nestedSettingValue(settings, 'categories') ? '1' : '0'} = 1`).bind(...wanted).all()
+  const found = new Set(rows.results.map((row: any) => row.slug))
+  return values.filter((_, index) => found.has(wanted[index]))
+}
+
 export async function listPages(env: Env, options: PageListOptions = {}) {
   if (!env.DB) return []
 
   const sort = options.sort === 'recent' ? 'recent' : 'title'
-  const limit = Math.min(Math.max(Number(options.limit || 500), 1), 1000)
+  const limit = Math.min(Math.max(Number(options.limit || 500), 1), 100)
   const includeDeleted = Boolean(options.includeDeleted)
+  const offset = Math.max(0, Math.floor(Number(options.offset) || 0))
+  const visibility = includeDeleted ? '' : ' AND ' + pageVisibilitySql(await getGlobalSettings(env))
   const recentExpression = "COALESCE((SELECT MAX(page_revisions_order.created_at) FROM revisions page_revisions_order WHERE page_revisions_order.page_id = pages.id), pages.updated_at, pages.created_at)"
   const orderBy = sort === 'recent'
     ? `julianday(${recentExpression}) DESC, ${recentExpression} DESC, pages.title COLLATE NOCASE ASC`
@@ -636,10 +683,10 @@ export async function listPages(env: Env, options: PageListOptions = {}) {
         JOIN categories ON categories.id = page_categories.category_id
         WHERE page_categories.page_id = pages.id) AS categories
     FROM pages
-    WHERE ${statusWhere}
+    WHERE ${statusWhere}${visibility}
     ORDER BY ${orderBy}
-    LIMIT ?
-  `).bind(limit).all()
+    LIMIT ? OFFSET ?
+  `).bind(limit, offset).all()
 
   const pages = rows.results || []
   if (!pages.length) return []
@@ -652,8 +699,9 @@ export async function listPages(env: Env, options: PageListOptions = {}) {
     const aliasRows = await env.DB.prepare(`
       SELECT page_id, alias_slug AS slug, alias_title AS title
       FROM page_aliases
+      WHERE page_id IN (${pages.map(() => '?').join(',')})
       ORDER BY alias_title COLLATE NOCASE ASC
-    `).all()
+    `).bind(...pages.map((page: any) => page.id)).all()
 
     for (const alias of aliasRows.results || []) {
       const list = aliasesByPage.get((alias as any).page_id) || []
@@ -666,9 +714,9 @@ export async function listPages(env: Env, options: PageListOptions = {}) {
     SELECT redirects.from_slug, redirects.to_slug
     FROM redirects
     JOIN pages ON pages.slug = redirects.to_slug
-    WHERE pages.status = 'published'
+    WHERE pages.status = 'published' AND redirects.to_slug IN (${pages.map(() => '?').join(',')})
     ORDER BY redirects.from_slug COLLATE NOCASE ASC
-  `).all()
+  `).bind(...pages.map((page: any) => page.slug)).all()
 
   for (const redirect of redirectRows.results || []) {
     const toSlug = (redirect as any).to_slug
@@ -692,6 +740,7 @@ export async function listPages(env: Env, options: PageListOptions = {}) {
 export async function listCategories(env: Env) {
   if (!env.DB) return []
 
+  const visibility = pageVisibilitySql(await getGlobalSettings(env))
   const rows = await env.DB.prepare(`
     SELECT
       categories.id,
@@ -701,7 +750,7 @@ export async function listCategories(env: Env) {
       COUNT(pages.id) AS pageCount
     FROM categories
     LEFT JOIN page_categories ON page_categories.category_id = categories.id
-    LEFT JOIN pages ON pages.id = page_categories.page_id AND pages.status = 'published'
+    LEFT JOIN pages ON pages.id = page_categories.page_id AND pages.status = 'published' AND ${visibility}
     GROUP BY categories.id, categories.slug, categories.name, categories.created_at
     HAVING COUNT(pages.id) > 0
     ORDER BY categories.name COLLATE NOCASE ASC
@@ -756,6 +805,7 @@ export async function readCategory(env: Env, slug: string) {
 }
 
 export async function readPage(env: Env, slug: string) {
+  if (!(await publicPageEnabled(env, slug))) return null
   if (!env.DB) return null
 
   const exact = await readPageRowByCandidates(env, slug, { preferCanonical: true })
@@ -763,6 +813,7 @@ export async function readPage(env: Env, slug: string) {
 
   const alias = await resolveAlias(env, slug)
   if (alias) {
+    if (!(await publicPageEnabled(env, String(alias.slug)))) return null
     const page = await readPageRow(env, (alias as any).slug)
     return hydratePage(env, page, {
       resolvedFrom: slug,
@@ -773,6 +824,7 @@ export async function readPage(env: Env, slug: string) {
 
   const redirect = await resolveRedirect(env, slug)
   if (redirect) {
+    if (!(await publicPageEnabled(env, String(redirect.slug)))) return null
     const page = await readPageRow(env, (redirect as any).slug)
     return hydratePage(env, page, {
       resolvedFrom: slug,
@@ -791,9 +843,9 @@ export async function readRandomPage(env: Env) {
   const rows = await env.DB.prepare(`
     SELECT slug
     FROM pages
-    WHERE status = 'published'
+    WHERE status = 'published' AND ${pageVisibilitySql(settings)}
     ORDER BY RANDOM()
-    LIMIT 100
+    LIMIT 1
   `).all()
 
   const row: any = (rows.results || []).find((item: any) => pageVisibleWithSettings(item?.slug, settings))
@@ -806,29 +858,23 @@ async function nextRevisionNumber(env: Env, pageId: string) {
   return Number(row?.next || 1)
 }
 
-async function syncCategories(env: Env, pageId: string, categories: string[] = []) {
-  await env.DB!.prepare('DELETE FROM page_categories WHERE page_id = ?').bind(pageId).run()
-
-  const unique = Array.from(new Set(categories.map(item => item.trim()).filter(Boolean)))
-  for (const name of unique) {
+async function syncCategories(env: Env, pageId: string, categories: string[] = [], statements?: D1PreparedStatement[]) {
+  const batch = statements || []
+  batch.push(env.DB!.prepare('DELETE FROM page_categories WHERE page_id = ?').bind(pageId))
+  for (const name of Array.from(new Set(categories.map(item => item.trim()).filter(Boolean)))) {
     const slug = slugFromTitle(name)
-    let category = await env.DB!.prepare('SELECT id FROM categories WHERE slug = ?').bind(slug).first()
-
-    if (!category) {
-      const id = crypto.randomUUID()
-      await env.DB!.prepare('INSERT INTO categories (id, slug, name, created_at) VALUES (?, ?, ?, ?)').bind(id, slug, name, new Date().toISOString()).run()
-      category = { id }
-    }
-
-    await env.DB!.prepare('INSERT OR IGNORE INTO page_categories (page_id, category_id) VALUES (?, ?)').bind(pageId, category.id).run()
+    batch.push(env.DB!.prepare('INSERT OR IGNORE INTO categories (id, slug, name, created_at) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), slug, name, new Date().toISOString()))
+    batch.push(env.DB!.prepare('INSERT OR IGNORE INTO page_categories (page_id, category_id) SELECT ?, id FROM categories WHERE slug = ?').bind(pageId, slug))
   }
+  if (!statements) await env.DB!.batch(batch)
 }
 
-async function syncAliases(env: Env, pageId: string, canonicalSlug: string, aliases: string[] = []) {
+async function syncAliases(env: Env, pageId: string, canonicalSlug: string, aliases: string[] = [], statements?: D1PreparedStatement[]) {
+  const batch = statements || []
   const optional = await getOptionalTables(env)
   if (!optional.pageAliases) return
 
-  await env.DB!.prepare('DELETE FROM page_aliases WHERE page_id = ?').bind(pageId).run()
+  batch.push(env.DB!.prepare('DELETE FROM page_aliases WHERE page_id = ?').bind(pageId))
 
   const unique = Array.from(new Map(
     cleanList(aliases)
@@ -841,19 +887,21 @@ async function syncAliases(env: Env, pageId: string, canonicalSlug: string, alia
     const exactPage = await env.DB!.prepare('SELECT id FROM pages WHERE slug = ? AND id != ?').bind(alias.slug, pageId).first()
     if (exactPage) continue
 
-    await env.DB!.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(alias.slug).run()
-    await env.DB!.prepare(`
+    batch.push(env.DB!.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(alias.slug))
+    batch.push(env.DB!.prepare(`
       INSERT INTO page_aliases (id, page_id, alias_slug, alias_title, created_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(alias_slug) DO UPDATE SET
         page_id = excluded.page_id,
         alias_title = excluded.alias_title
-    `).bind(crypto.randomUUID(), pageId, alias.slug, alias.title, new Date().toISOString()).run()
+    `).bind(crypto.randomUUID(), pageId, alias.slug, alias.title, new Date().toISOString()))
   }
+  if (!statements && batch.length) await env.DB!.batch(batch)
 }
 
-async function syncRedirects(env: Env, canonicalSlug: string, redirects: Array<string | RedirectRuleInput> = [], authorEmail = '') {
-  await env.DB!.prepare('DELETE FROM redirects WHERE to_slug = ?').bind(canonicalSlug).run()
+async function syncRedirects(env: Env, canonicalSlug: string, redirects: Array<string | RedirectRuleInput> = [], authorEmail = '', statements?: D1PreparedStatement[]) {
+  const batch = statements || []
+  batch.push(env.DB!.prepare('DELETE FROM redirects WHERE to_slug = ?').bind(canonicalSlug))
 
   const normalized = Array.from(new Map(
     (Array.isArray(redirects) ? redirects : [])
@@ -870,10 +918,10 @@ async function syncRedirects(env: Env, canonicalSlug: string, redirects: Array<s
     if (exactPage) continue
 
     const optional = await getOptionalTables(env)
-    if (optional.pageAliases) await env.DB!.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(rule.fromSlug).run()
+    if (optional.pageAliases) batch.push(env.DB!.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(rule.fromSlug))
 
     if (columns.targetFragment) {
-      await env.DB!.prepare(`
+      batch.push(env.DB!.prepare(`
         INSERT INTO redirects (id, from_slug, to_slug, target_fragment, created_by_email, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(from_slug) DO UPDATE SET
@@ -881,26 +929,29 @@ async function syncRedirects(env: Env, canonicalSlug: string, redirects: Array<s
           target_fragment = excluded.target_fragment,
           created_by_email = excluded.created_by_email,
           created_at = excluded.created_at
-      `).bind(crypto.randomUUID(), rule.fromSlug, canonicalSlug, rule.fragment || null, authorEmail || null, new Date().toISOString()).run()
+      `).bind(crypto.randomUUID(), rule.fromSlug, canonicalSlug, rule.fragment || null, authorEmail || null, new Date().toISOString()))
     } else {
-      await env.DB!.prepare(`
+      batch.push(env.DB!.prepare(`
         INSERT INTO redirects (id, from_slug, to_slug, created_by_email, created_at)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(from_slug) DO UPDATE SET
           to_slug = excluded.to_slug,
           created_by_email = excluded.created_by_email,
           created_at = excluded.created_at
-      `).bind(crypto.randomUUID(), rule.fromSlug, canonicalSlug, authorEmail || null, new Date().toISOString()).run()
+      `).bind(crypto.randomUUID(), rule.fromSlug, canonicalSlug, authorEmail || null, new Date().toISOString()))
     }
   }
+  if (!statements && batch.length) await env.DB!.batch(batch)
 }
 
-async function syncSearch(env: Env, pageId: string, page: PageInput, slug: string) {
-  await env.DB!.prepare('DELETE FROM page_search WHERE page_id = ?').bind(pageId).run()
-  await env.DB!.prepare(`
+async function syncSearch(env: Env, pageId: string, page: PageInput, slug: string, statements?: D1PreparedStatement[]) {
+  const batch = statements || []
+  batch.push(env.DB!.prepare('DELETE FROM page_search WHERE page_id = ?').bind(pageId))
+  batch.push(env.DB!.prepare(`
     INSERT INTO page_search (page_id, slug, title, subtitle, content_markdown)
     VALUES (?, ?, ?, ?, ?)
-  `).bind(pageId, slug, page.title, page.subtitle || '', page.content || '').run()
+  `).bind(pageId, slug, page.title, page.subtitle || '', page.content || ''))
+  if (!statements && batch.length) await env.DB!.batch(batch)
 }
 
 
@@ -955,43 +1006,64 @@ function validatePageInput(input: PageInput, options: { requireSummary?: boolean
   const unresolvedWikiClose = (content.match(/\]\]/g) || []).length
   if (unresolvedWikiOpen !== unresolvedWikiClose) errors.push('há um link wiki [[ ]] incompleto')
 
-  if (errors.length) throw new Error(`edição recusada: ${errors.join('; ')}`)
+  if (errors.length) throw new EditorialError(`edição recusada: ${errors.join('; ')}`, 400)
 }
 
-export async function writePage(env: Env, slug: string, input: PageInput, authorEmail: string, authorName: string | null = null) {
-  if (!env.DB) return null
+export async function writePage(env: Env, slug: string, input: PageInput, authorEmail: string, authorName: string | null = null, approval?: { id: string, reviewerName: string, creditMode: string }) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  const statements: D1PreparedStatement[] = []
 
   const now = new Date().toISOString()
   validatePageInput(input, { requireSummary: true })
   const title = String(input.title || '').trim()
   const content = normalizeEscapedBlockNewlines(String(input.content || ''))
   const canonicalSlug = slugFromTitle(slug)
-  if (!canonicalSlug) throw new Error('slug inválido')
-  if (isReservedFilePageSlug(canonicalSlug)) throw new Error('o namespace /wiki/arquivo/ é reservado para uploads de mídia')
+  if (!canonicalSlug) throw new EditorialError('slug inválido', 400)
+  if (!(await publicPageEnabled(env, canonicalSlug))) throw new EditorialError('conteúdo indisponível', 403)
+  if (isReservedFilePageSlug(canonicalSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
 
   let storageSlug = canonicalSlug
-  const existing = await findStoredPageSlug(env, slug, 'any', { preferCanonical: true })
+  const existing = await findStoredPageSlug(env, input.sourceSlug || slug, 'any', { preferCanonical: true })
   const existingDetails: any = existing
-    ? await env.DB.prepare('SELECT id, slug, is_locked, status FROM pages WHERE id = ?').bind(existing.id).first()
+    ? await env.DB.prepare('SELECT id, slug, title, is_locked, status, current_revision_id FROM pages WHERE id = ?').bind(existing.id).first()
     : null
 
-  if (existingDetails?.is_locked) throw new Error('página bloqueada')
+  const renaming = Boolean(input.sourceSlug && slugFromTitle(input.sourceSlug) !== canonicalSlug)
+  if (renaming) {
+    const actor: any = await env.DB.prepare('SELECT role, status FROM editor_profiles WHERE email = ?').bind(authorEmail).first()
+    if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actor.role)) throw new EditorialError('renomeação restrita a administradores', 403)
+  }
+  let legacyRedirect: D1PreparedStatement | null = null
+  if (existingDetails?.is_locked) throw new EditorialError('página bloqueada', 403)
+  if (existingDetails && existingDetails.status !== 'published') throw new EditorialError('a página precisa ser restaurada antes de receber edições', 403)
+  const categories = (await globalSettingEnabled(env, 'categories')) ? input.categories || [] : existingDetails ? await readPageCategories(env, existingDetails.id) : []
+  const expected = 'expectedRevisionId' in input ? input.expectedRevisionId : existingDetails?.current_revision_id || null
+  const guardId = crypto.randomUUID()
+  statements.push(env.DB.prepare(`INSERT INTO core_write_guards (id, accepted) VALUES (?, CASE WHEN
+    ((? IS NULL AND ? IS NULL AND NOT EXISTS (SELECT 1 FROM pages WHERE slug = ?)) OR
+     EXISTS (SELECT 1 FROM pages WHERE id = ? AND current_revision_id IS ? AND slug = ? AND title = ? AND status = 'published' AND is_locked = 0))
+    AND (? = 0 OR EXISTS (SELECT 1 FROM editor_profiles WHERE email = ? AND status = 'active' AND role IN ('admin', 'super_admin')))
+    AND NOT EXISTS (SELECT 1 FROM editor_profiles WHERE email = ? AND status != 'active')
+    AND (? IS NULL OR EXISTS (SELECT 1 FROM edit_proposals WHERE id = ? AND status = 'pending'))
+    THEN 1 ELSE 0 END)`).bind(guardId, existingDetails?.id || null, expected, canonicalSlug, existingDetails?.id || null, expected, existingDetails?.slug || null, existingDetails?.title || null, renaming ? 1 : 0, authorEmail, authorEmail, approval?.id || null, approval?.id || null))
 
   if (existingDetails && existingDetails.slug !== canonicalSlug) {
     const conflict = await env.DB.prepare('SELECT id FROM pages WHERE slug = ? AND id != ?').bind(canonicalSlug, existingDetails.id).first()
     if (!conflict) {
       const oldSlug = String(existingDetails.slug || '')
-      await env.DB.prepare('UPDATE pages SET slug = ?, updated_at = ? WHERE id = ?').bind(canonicalSlug, now, existingDetails.id).run()
-      await env.DB.prepare('UPDATE page_search SET slug = ? WHERE page_id = ?').bind(canonicalSlug, existingDetails.id).run()
+      statements.push(env.DB.prepare('UPDATE pages SET slug = ?, updated_at = ? WHERE id = ?').bind(canonicalSlug, now, existingDetails.id))
+      statements.push(env.DB.prepare('UPDATE redirects SET to_slug = ? WHERE to_slug = ?').bind(canonicalSlug, oldSlug))
+      statements.push(env.DB.prepare('UPDATE page_search SET slug = ? WHERE page_id = ?').bind(canonicalSlug, existingDetails.id))
       if (oldSlug && oldSlug !== canonicalSlug) {
-        await env.DB.prepare(`
+        legacyRedirect = env.DB.prepare(`
           INSERT INTO redirects (id, from_slug, to_slug, created_by_email, created_at)
           VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(from_slug) DO UPDATE SET to_slug = excluded.to_slug, created_by_email = excluded.created_by_email, created_at = excluded.created_at
-        `).bind(crypto.randomUUID(), oldSlug, canonicalSlug, authorEmail, now).run()
+        `).bind(crypto.randomUUID(), oldSlug, canonicalSlug, authorEmail, now)
       }
       existingDetails.slug = canonicalSlug
     } else {
+      if (renaming) throw new EditorialError('já existe uma página com esse slug', 409)
       storageSlug = String(existingDetails.slug || canonicalSlug)
     }
   }
@@ -1001,16 +1073,16 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
   const revisionNumber = await nextRevisionNumber(env, pageId)
 
   if (!existingDetails) {
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO pages (id, slug, title, subtitle, namespace, status, created_by_email, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'article', 'published', ?, ?, ?)
-    `).bind(pageId, storageSlug, title, input.subtitle || null, authorEmail, now, now).run()
+    `).bind(pageId, storageSlug, title, input.subtitle || null, authorEmail, now, now))
   }
 
   const revisionColumns = await getRevisionMetadataColumns(env)
 
   if (hasFullRevisionMetadata(revisionColumns)) {
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO revisions (
         id,
         page_id,
@@ -1033,13 +1105,13 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
       authorName,
       title,
       input.subtitle || null,
-      JSON.stringify(Array.isArray(input.categories) ? input.categories : []),
+      JSON.stringify(categories),
       content,
       input.summary || 'sem resumo',
       now
-    ).run()
+    ))
   } else {
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO revisions (
         id,
         page_id,
@@ -1060,24 +1132,44 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
       content,
       input.summary || 'sem resumo',
       now
-    ).run()
+    ))
   }
 
-  await env.DB.prepare(`
+  statements.push(env.DB.prepare(`
     UPDATE pages
     SET title = ?, subtitle = ?, status = 'published', current_revision_id = ?, updated_at = ?
     WHERE id = ?
-  `).bind(title, input.subtitle || null, revisionId, now, pageId).run()
+  `).bind(title, input.subtitle || null, revisionId, now, pageId))
 
-  await syncCategories(env, pageId, input.categories || [])
-  if ('aliases' in input) await syncAliases(env, pageId, storageSlug, input.aliases || [])
-  if ('redirectRules' in input) await syncRedirects(env, storageSlug, input.redirectRules || [], authorEmail)
-  else if ('redirects' in input) await syncRedirects(env, storageSlug, input.redirects || [], authorEmail)
-  await syncSearch(env, pageId, { ...input, title, content }, storageSlug)
+  await syncCategories(env, pageId, categories, statements)
+  if ('aliases' in input) await syncAliases(env, pageId, storageSlug, input.aliases || [], statements)
+  if ('redirectRules' in input) await syncRedirects(env, storageSlug, input.redirectRules || [], authorEmail, statements)
+  else if ('redirects' in input) await syncRedirects(env, storageSlug, input.redirects || [], authorEmail, statements)
+  if (legacyRedirect) statements.push(legacyRedirect)
+  await syncSearch(env, pageId, { ...input, title, content }, storageSlug, statements)
 
-  return readPage(env, storageSlug)
+  if (approval) statements.push(env.DB.prepare(`UPDATE edit_proposals SET status = 'approved', reviewed_by_email = ?, reviewed_by_name = ?, suggestion_credit_mode = ?, reviewed_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'`).bind(authorEmail, approval.reviewerName, approval.creditMode, now, now, approval.id))
+  statements.push(env.DB.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId))
+  try { await env.DB.batch(statements) }
+  catch (cause) {
+    if (String(cause).includes('wiki_recovery_locked')) throw new EditorialError('recuperação em andamento', 503)
+    if (String(cause).includes('wiki_write_conflict') || String(cause).includes('UNIQUE constraint failed: pages.slug') || String(cause).includes('UNIQUE constraint failed: revisions.page_id')) throw new EditorialError('a página foi modificada; revise o conflito antes de salvar')
+    throw cause
+  }
+  return { id: pageId, slug: storageSlug, title, subtitle: input.subtitle || '', content, categories, currentRevisionId: revisionId, revisionNumber, updatedAt: now, aliases: input.aliases || [], redirects: input.redirects || [] }
 }
 
+
+async function commitPageState(env: Env, pageId: string, status: string, statements: D1PreparedStatement[], expectedRevisionId?: string | null, expectedPage?: { slug: string, title: string }) {
+  const guardId = crypto.randomUUID()
+  const guard = env.DB!.prepare(`INSERT INTO core_write_guards (id, accepted) VALUES (?, CASE WHEN EXISTS
+    (SELECT 1 FROM pages WHERE id = ? AND status = ? AND (? = 0 OR current_revision_id IS ?) AND (? IS NULL OR (slug = ? AND title = ?))) THEN 1 ELSE 0 END)`).bind(guardId, pageId, status, expectedRevisionId === undefined ? 0 : 1, expectedRevisionId || null, expectedPage?.slug || null, expectedPage?.slug || null, expectedPage?.title || null)
+  try { await env.DB!.batch([guard, ...statements, env.DB!.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId)]) }
+  catch (cause) {
+    if (String(cause).includes('wiki_write_conflict')) throw new EditorialError('o estado da página foi modificado')
+    throw cause
+  }
+}
 
 export async function deletePage(env: Env, slug: string, authorEmail: string, reason = '') {
   if (!env.DB) return null
@@ -1088,21 +1180,10 @@ export async function deletePage(env: Env, slug: string, authorEmail: string, re
   const now = new Date().toISOString()
   const purgeAfter = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString()
 
-  try {
-    await env.DB.prepare(`
-      UPDATE pages
-      SET status = 'deleted', deleted_at = ?, deleted_by_email = ?, purge_after = ?, deleted_reason = ?, updated_at = ?
-      WHERE id = ?
-    `).bind(now, authorEmail, purgeAfter, String(reason || '').trim() || null, now, page.id).run()
-  } catch {
-    await env.DB.prepare(`
-      UPDATE pages
-      SET status = 'deleted', updated_at = ?
-      WHERE id = ?
-    `).bind(now, page.id).run()
-  }
-
-  await env.DB.prepare('DELETE FROM page_search WHERE page_id = ?').bind(page.id).run()
+  await commitPageState(env, page.id, 'published', [
+    env.DB.prepare(`UPDATE pages SET status = 'deleted', deleted_at = ?, deleted_by_email = ?, purge_after = ?, deleted_reason = ?, updated_at = ? WHERE id = ?`).bind(now, authorEmail, purgeAfter, String(reason || '').trim() || null, now, page.id),
+    env.DB.prepare('DELETE FROM page_search WHERE page_id = ?').bind(page.id)
+  ])
 
   return {
     ok: true,
@@ -1114,17 +1195,20 @@ export async function deletePage(env: Env, slug: string, authorEmail: string, re
   }
 }
 
-export async function listPageRevisions(env: Env, slug: string) {
+export async function listPageRevisions(env: Env, slug: string, options: { offset?: number } = {}) {
   if (!env.DB) return null
+  if (!(await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
 
   const page = await readPage(env, slug)
   if (!page) return null
+  const offset = Math.max(0, Math.floor(Number(options.offset) || 0))
+  const count: any = await env.DB.prepare('SELECT COUNT(*) AS total FROM revisions WHERE page_id = ?').bind(page.id).first()
 
   const rows = await env.DB.prepare(`
     SELECT
       revisions.id,
       revisions.revision_number AS revisionNumber,
-      revisions.author_email AS author,
+      COALESCE(NULLIF(editor_profiles.display_name, ''), revisions.author_name, 'editor') AS author,
       COALESCE(NULLIF(editor_profiles.display_name, ''), revisions.author_name) AS authorName,
       revisions.summary,
       revisions.created_at AS createdAt,
@@ -1133,8 +1217,8 @@ export async function listPageRevisions(env: Env, slug: string) {
     LEFT JOIN editor_profiles ON lower(editor_profiles.email) = lower(revisions.author_email)
     WHERE revisions.page_id = ?
     ORDER BY revisions.revision_number DESC
-    LIMIT 250
-  `).bind(page.currentRevisionId, page.id).all()
+    LIMIT 100 OFFSET ?
+  `).bind(page.currentRevisionId, page.id, offset).all()
 
   return {
     page: {
@@ -1143,12 +1227,16 @@ export async function listPageRevisions(env: Env, slug: string) {
       title: page.title,
       currentRevisionId: page.currentRevisionId
     },
-    revisions: rows.results || []
+    revisions: rows.results || [],
+    total: Number(count?.total || 0),
+    offset,
+    nextOffset: offset + rows.results.length < Number(count?.total || 0) ? offset + rows.results.length : null
   }
 }
 
 export async function readPageRevision(env: Env, slug: string, revisionNumber: string | number) {
   if (!env.DB) return null
+  if (!(await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
 
   const page = await readPage(env, slug)
   if (!page) return null
@@ -1160,11 +1248,11 @@ export async function readPageRevision(env: Env, slug: string, revisionNumber: s
         id,
         page_id,
         revision_number AS revisionNumber,
-        author_email AS author,
+        COALESCE(author_name, 'editor') AS author,
         COALESCE((SELECT NULLIF(editor_profiles.display_name, '') FROM editor_profiles WHERE lower(editor_profiles.email) = lower(revisions.author_email) LIMIT 1), revisions.author_name) AS authorName,
         COALESCE(title, ?) AS title,
-        COALESCE(subtitle, ?) AS subtitle,
-        COALESCE(categories_json, '[]') AS categoriesJson,
+        CASE WHEN title IS NULL THEN COALESCE(subtitle, ?) ELSE COALESCE(subtitle, '') END AS subtitle,
+        categories_json AS categoriesJson,
         content_markdown AS content,
         summary,
         created_at AS createdAt,
@@ -1183,11 +1271,11 @@ export async function readPageRevision(env: Env, slug: string, revisionNumber: s
         id,
         page_id,
         revision_number AS revisionNumber,
-        author_email AS author,
+        COALESCE(author_name, 'editor') AS author,
         COALESCE((SELECT NULLIF(editor_profiles.display_name, '') FROM editor_profiles WHERE lower(editor_profiles.email) = lower(revisions.author_email) LIMIT 1), revisions.author_name) AS authorName,
         ? AS title,
         ? AS subtitle,
-        '[]' AS categoriesJson,
+        NULL AS categoriesJson,
         content_markdown AS content,
         summary,
         created_at AS createdAt,
@@ -1205,7 +1293,7 @@ export async function readPageRevision(env: Env, slug: string, revisionNumber: s
   if (!revision) return null
 
   let categories = parseJsonArray((revision as any).categoriesJson)
-  if (!categories.length) categories = page.categories || []
+  if ((revision as any).categoriesJson == null) categories = page.categories || []
 
   return {
     id: (revision as any).id,
@@ -1225,11 +1313,12 @@ export async function readPageRevision(env: Env, slug: string, revisionNumber: s
   }
 }
 
-export async function restorePageRevision(env: Env, slug: string, revisionNumber: string | number, authorEmail: string, authorName: string | null = null, summary = '') {
+export async function restorePageRevision(env: Env, slug: string, revisionNumber: string | number, authorEmail: string, authorName: string | null = null, summary = '', expectedRevisionId?: string | null) {
   const revision = await readPageRevision(env, slug, revisionNumber)
   if (!revision) return null
 
   return writePage(env, slug, {
+    expectedRevisionId: expectedRevisionId === undefined ? revision.currentRevisionId : expectedRevisionId,
     title: revision.title,
     subtitle: revision.subtitle,
     content: revision.content,
@@ -1299,17 +1388,18 @@ export async function recordUpload(env: Env, input: UploadInput) {
     ).run()
   }
 
-  return readUpload(env, columns.fileSlug && columns.description && columns.updatedAt ? fileSlug : id)
+  return uploadRowToFile({ id, file_slug: fileSlug, r2_key: input.r2Key, filename: input.filename, mime_type: input.mimeType, size_bytes: input.sizeBytes, sha256: input.sha256 || null, uploaded_by_email: input.uploadedByEmail || null, description: input.description || null, created_at: now, updated_at: now, status: 'published' })
 }
 
 
-export async function listUploads(env: Env, options: { search?: string, limit?: number, includeDeleted?: boolean } = {}) {
+export async function listUploads(env: Env, options: { search?: string, limit?: number, offset?: number, includeDeleted?: boolean } = {}) {
   if (!env.DB) return []
 
   const columns = await getUploadMetadataColumns(env)
   const limit = Math.min(Math.max(Number(options.limit || 80), 1), 200)
+  const offset = Math.max(0, Math.floor(Number(options.offset) || 0))
   const query = String(options.search || '').trim()
-  const like = `%${query.replace(/[\%_]/g, '\$&')}%`
+  const like = likeTerm(query)
   const statusFilter = options.includeDeleted ? '' : "AND COALESCE(status, 'published') = 'published'"
 
   if (columns.fileSlug && columns.description && columns.updatedAt && columns.status) {
@@ -1336,8 +1426,8 @@ export async function listUploads(env: Env, options: { search?: string, limit?: 
           OR file_slug LIKE ? ESCAPE '\'
           OR description LIKE ? ESCAPE '\') ${statusFilter}
         ORDER BY created_at DESC
-        LIMIT ?
-      `).bind(like, like, like, limit)
+        LIMIT ? OFFSET ?
+      `).bind(like, like, like, limit, offset)
       : env.DB.prepare(`
         SELECT
           id,
@@ -1358,8 +1448,8 @@ export async function listUploads(env: Env, options: { search?: string, limit?: 
         FROM uploads
         WHERE 1 = 1 ${statusFilter}
         ORDER BY created_at DESC
-        LIMIT ?
-      `).bind(limit)
+        LIMIT ? OFFSET ?
+      `).bind(limit, offset)
 
     const rows = await statement.all()
     return (rows.results || []).map(uploadRowToFile).filter(Boolean)
@@ -1387,8 +1477,8 @@ export async function listUploads(env: Env, options: { search?: string, limit?: 
       WHERE filename LIKE ? ESCAPE '\'
         OR id LIKE ? ESCAPE '\'
       ORDER BY created_at DESC
-      LIMIT ?
-    `).bind(like, like, limit)
+      LIMIT ? OFFSET ?
+    `).bind(like, like, limit, offset)
     : env.DB.prepare(`
       SELECT
         id,
@@ -1408,8 +1498,8 @@ export async function listUploads(env: Env, options: { search?: string, limit?: 
         NULL AS purge_after
       FROM uploads
       ORDER BY created_at DESC
-      LIMIT ?
-    `).bind(limit)
+      LIMIT ? OFFSET ?
+    `).bind(limit, offset)
 
   const rows = await statement.all()
   return (rows.results || []).map(uploadRowToFile).filter(Boolean)
@@ -1711,9 +1801,7 @@ export async function searchPages(env: Env, query: string) {
       `).bind(fts).all()
 
       for (const row of rows.results || []) mergeSearchResult(results, row, cleanQuery, 260, 'conteúdo')
-    } catch {
-      // fts pode falhar com entrada estranha
-    }
+    } catch (cause) { throw cause }
   }
 
   const fallbackRows = await env.DB.prepare(`
@@ -1749,6 +1837,56 @@ export async function searchPages(env: Env, query: string) {
     .slice(0, 25)
 }
 
+export async function searchPageBatch(env: Env, query: string, offset = 0) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  const clean = query.trim()
+  if (!clean) return { results: [], total: 0, offset: 0, nextOffset: null }
+  if (clean.length > 500) throw new EditorialError('consulta de busca longa demais', 400)
+  offset = Math.max(0, Math.floor(Number(offset) || 0))
+  const canonical = slugFromTitle(clean)
+  const like = likeTerm(clean), canonicalLike = likeTerm(canonical), prefix = likePrefix(clean), canonicalPrefix = likePrefix(canonical)
+  const fts = ftsQuery(clean)
+  const visibility = pageVisibilitySql(await getGlobalSettings(env))
+  const base = `WITH matching_aliases AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY page_id ORDER BY alias_slug) AS match_number FROM page_aliases WHERE alias_title LIKE ? ESCAPE '\\' OR alias_slug LIKE ? ESCAPE '\\'
+    ), matching_redirects AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY to_slug ORDER BY from_slug) AS match_number FROM redirects WHERE from_slug LIKE ? ESCAPE '\\'
+    ), candidates AS (SELECT pages.id, pages.slug, pages.title, pages.subtitle, pages.updated_at AS updatedAt,
+    substr(COALESCE(revisions.content_markdown, ''), 1, 260) AS snippet,
+    COALESCE(matching_aliases.alias_title, matching_redirects.from_slug, pages.title) AS matchedTitle,
+    COALESCE(matching_aliases.alias_slug, matching_redirects.from_slug, pages.slug) AS matchedSlug,
+    CASE WHEN matching_aliases.page_id IS NULL THEN COALESCE(matching_redirects.target_fragment, '') ELSE '' END AS targetFragment
+    FROM pages LEFT JOIN revisions ON revisions.id = pages.current_revision_id
+    LEFT JOIN matching_aliases ON matching_aliases.page_id = pages.id AND matching_aliases.match_number = 1
+    LEFT JOIN matching_redirects ON matching_redirects.to_slug = pages.slug AND matching_redirects.match_number = 1
+    WHERE pages.status = 'published' AND ${visibility} AND (
+      pages.title LIKE ? ESCAPE '\\' OR pages.slug LIKE ? ESCAPE '\\' OR COALESCE(pages.subtitle, '') LIKE ? ESCAPE '\\' OR COALESCE(revisions.content_markdown, '') LIKE ? ESCAPE '\\'
+      OR matching_aliases.page_id IS NOT NULL OR matching_redirects.to_slug IS NOT NULL
+      ${fts ? 'OR pages.id IN (SELECT page_id FROM page_search WHERE page_search MATCH ?)' : ''}
+    ))`
+  const bindings = [prefix, canonicalPrefix, canonicalPrefix, like, canonicalLike, like, like, ...(fts ? [fts] : [])]
+  const count: any = await env.DB.prepare(base + ' SELECT COUNT(*) AS total FROM candidates').bind(...bindings).first()
+  const total = Number(count?.total || 0)
+  const preferred = (await searchPages(env, clean)).slice(0, 20)
+  const preferredSlugs = preferred.map((page: any) => page.slug)
+  const exclusion = (slugs: string[]) => slugs.length ? ` WHERE slug NOT IN (${slugs.map(() => '?').join(',')})` : ''
+  if (preferred.length < 20) {
+    const extra = await env.DB.prepare(base + ' SELECT * FROM candidates' + exclusion(preferredSlugs) + ' ORDER BY title COLLATE NOCASE, slug LIMIT ?').bind(...bindings, ...preferredSlugs, 20 - preferred.length).all()
+    const merged = new Map()
+    for (const row of extra.results) mergeSearchResult(merged, row, clean, 80, 'texto')
+    preferred.push(...merged.values())
+  }
+  let results = preferred
+  if (offset) {
+    const slugs = preferred.map((page: any) => page.slug)
+    const rows = await env.DB.prepare(base + ' SELECT * FROM candidates' + exclusion(slugs) + ' ORDER BY title COLLATE NOCASE, slug LIMIT 20 OFFSET ?').bind(...bindings, ...slugs, Math.max(0, offset - preferred.length)).all()
+    const merged = new Map()
+    for (const row of rows.results) mergeSearchResult(merged, row, clean, 80, 'texto')
+    results = Array.from(merged.values())
+  }
+  return { results, total, offset, nextOffset: offset + results.length < total ? offset + results.length : null }
+}
+
 export type EditProposalInput = PageInput & {
   contact?: string
 }
@@ -1759,6 +1897,7 @@ function rowToProposal(row: any) {
   return {
     id: row.id,
     pageSlug: row.page_slug,
+    currentRevisionId: row.current_revision_id || null,
     title: row.title,
     subtitle: row.subtitle || '',
     content: row.content_markdown || '',
@@ -1787,7 +1926,7 @@ export async function createEditProposal(env: Env, slug: string, input: EditProp
   const reporterIp = clientIpFromRequest(request)
   const userAgent = String(request.headers.get('user-agent') || '').slice(0, 500)
   const pageSlug = slugFromTitle(slug)
-  if (isReservedFilePageSlug(pageSlug)) throw new Error('o namespace /wiki/arquivo/ é reservado para uploads de mídia')
+  if (isReservedFilePageSlug(pageSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
 
   validatePageInput({ ...input, title, content, summary }, { requireSummary: true })
 
@@ -1809,9 +1948,18 @@ export async function createEditProposal(env: Env, slug: string, input: EditProp
     reviewedBy: null
   }
 
-  if (!env.DB) return proposal
+  if (!env.DB) throw new EditorialError('armazenamento de propostas indisponível', 503)
 
-  await env.DB.prepare(`
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(reporterIp || 'unknown')))).map(value => value.toString(16).padStart(2, '0')).join('')
+  const windowStart = Math.floor(Date.now() / 600000)
+  const guardId = crypto.randomUUID()
+  const statements = [
+    env.DB.prepare('DELETE FROM proposal_rate_limits WHERE window_start < ?').bind(windowStart - 144),
+    env.DB.prepare(`INSERT INTO proposal_rate_limits (client_hash, window_start, count) VALUES (?, ?, 1)
+      ON CONFLICT(client_hash) DO UPDATE SET window_start = excluded.window_start,
+      count = CASE WHEN proposal_rate_limits.window_start = excluded.window_start THEN proposal_rate_limits.count + 1 ELSE 1 END`).bind(hash, windowStart),
+    env.DB.prepare('INSERT INTO core_write_guards (id, accepted) SELECT ?, CASE WHEN count <= 5 THEN 1 ELSE 0 END FROM proposal_rate_limits WHERE client_hash = ?').bind(guardId, hash),
+    env.DB.prepare(`
     INSERT INTO edit_proposals (
       id,
       page_slug,
@@ -1840,7 +1988,12 @@ export async function createEditProposal(env: Env, slug: string, input: EditProp
     userAgent || null,
     now,
     now
-  ).run()
+  ), env.DB.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId)]
+  try { await env.DB.batch(statements) }
+  catch (cause) {
+    if (String(cause).includes('wiki_write_conflict')) throw new EditorialError('limite de propostas atingido; tente novamente mais tarde', 429)
+    throw cause
+  }
 
   return proposal
 }
@@ -1849,7 +2002,7 @@ export async function listEditProposals(env: Env, status = 'pending') {
   if (!env.DB) return []
 
   const rows = await env.DB.prepare(`
-    SELECT *
+    SELECT *, (SELECT current_revision_id FROM pages WHERE pages.slug = edit_proposals.page_slug) AS current_revision_id
     FROM edit_proposals
     WHERE status = ?
     ORDER BY created_at DESC
@@ -1861,16 +2014,17 @@ export async function listEditProposals(env: Env, status = 'pending') {
 
 export async function readEditProposal(env: Env, id: string) {
   if (!env.DB) return null
-  const row = await env.DB.prepare('SELECT * FROM edit_proposals WHERE id = ?').bind(id).first()
+  const row = await env.DB.prepare('SELECT *, (SELECT current_revision_id FROM pages WHERE pages.slug = edit_proposals.page_slug) AS current_revision_id FROM edit_proposals WHERE id = ?').bind(id).first()
   return rowToProposal(row)
 }
 
-export async function approveEditProposal(env: Env, id: string, reviewerEmail: string, reviewerName: string | null = null, creditMode = 'contact') {
+export async function approveEditProposal(env: Env, id: string, reviewerEmail: string, reviewerName: string | null = null, creditMode = 'contact', expectedRevisionId?: string | null) {
   const proposal = await readEditProposal(env, id)
   if (!proposal || proposal.status !== 'pending') return null
 
   const cleanMode = ['contact', 'ip', 'anonymous'].includes(String(creditMode || '')) ? String(creditMode) : 'contact'
-  const baseName = String(reviewerName || reviewerEmail || '').trim() || reviewerEmail
+  const profile: any = env.DB ? await env.DB.prepare('SELECT display_name FROM editor_profiles WHERE email = ?').bind(reviewerEmail).first() : null
+  const baseName = String(profile?.display_name || reviewerName || 'editor').trim() || 'editor'
   const suggestedBy = cleanMode === 'anonymous'
     ? 'um anônimo'
     : cleanMode === 'ip'
@@ -1879,29 +2033,15 @@ export async function approveEditProposal(env: Env, id: string, reviewerEmail: s
   const revisionAuthorName = `${baseName} (Sugerido por ${suggestedBy})`
 
   const page = await writePage(env, proposal.pageSlug, {
+    expectedRevisionId: expectedRevisionId === undefined ? proposal.currentRevisionId : expectedRevisionId,
     title: proposal.title,
     subtitle: proposal.subtitle,
     content: proposal.content,
     categories: proposal.categories,
     summary: proposal.summary || 'proposta de edição aprovada'
-  }, reviewerEmail, revisionAuthorName)
+  }, reviewerEmail, revisionAuthorName, { id, reviewerName: baseName, creditMode: cleanMode })
 
-  const now = new Date().toISOString()
-  try {
-    await env.DB!.prepare(`
-      UPDATE edit_proposals
-      SET status = 'approved', reviewed_by_email = ?, reviewed_by_name = ?, suggestion_credit_mode = ?, reviewed_at = ?, updated_at = ?
-      WHERE id = ?
-    `).bind(reviewerEmail, baseName, cleanMode, now, now, id).run()
-  } catch {
-    await env.DB!.prepare(`
-      UPDATE edit_proposals
-      SET status = 'approved', reviewed_by_email = ?, reviewed_at = ?, updated_at = ?
-      WHERE id = ?
-    `).bind(reviewerEmail, now, now, id).run()
-  }
-
-  return { proposal: await readEditProposal(env, id), page }
+  return { proposal: { ...proposal, status: 'approved' }, page }
 }
 
 export async function rejectEditProposal(env: Env, id: string, reviewerEmail: string) {
@@ -1909,13 +2049,14 @@ export async function rejectEditProposal(env: Env, id: string, reviewerEmail: st
   if (!proposal || proposal.status !== 'pending') return null
 
   const now = new Date().toISOString()
-  await env.DB!.prepare(`
+  const rejected: any = await env.DB!.prepare(`
     UPDATE edit_proposals
     SET status = 'rejected', reviewed_by_email = ?, reviewed_at = ?, updated_at = ?
-    WHERE id = ?
-  `).bind(reviewerEmail, now, now, id).run()
+    WHERE id = ? AND status = 'pending' RETURNING *
+  `).bind(reviewerEmail, now, now, id).first()
 
-  return readEditProposal(env, id)
+  if (!rejected) throw new EditorialError('a proposta já foi revisada')
+  return rowToProposal(rejected)
 }
 
 
@@ -2015,16 +2156,17 @@ export async function setPageLock(env: Env, slug: string, locked: boolean, autho
 
 export async function renamePage(env: Env, slug: string, input: { title?: string, slug?: string, summary?: string }, authorEmail: string) {
   if (!env.DB) return null
+  const statements: D1PreparedStatement[] = []
   const title = String(input.title || '').trim()
   const newSlug = slugFromTitle(input.slug || title)
-  if (!newSlug || !title) throw new Error('payload inválido')
-  if (isReservedFilePageSlug(newSlug)) throw new Error('o namespace /wiki/arquivo/ é reservado para uploads de mídia')
+  if (!newSlug || !title) throw new EditorialError('payload inválido', 400)
+  if (isReservedFilePageSlug(newSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
 
   const stored = await findStoredPageSlug(env, slug, 'published', { preferCanonical: false })
   if (!stored) return null
 
   const page: any = await env.DB.prepare(`
-    SELECT pages.id, pages.slug, pages.title, pages.subtitle, pages.current_revision_id, revisions.content_markdown AS content
+    SELECT pages.*, revisions.content_markdown AS content
     FROM pages
     LEFT JOIN revisions ON revisions.id = pages.current_revision_id
     WHERE pages.id = ? AND pages.status = 'published'
@@ -2034,27 +2176,28 @@ export async function renamePage(env: Env, slug: string, input: { title?: string
   if (!page) return null
 
   const oldSlug = String(page.slug || '')
+  const view: any = await hydratePage(env, page)
   if (newSlug !== oldSlug) {
     const conflict = await env.DB.prepare('SELECT id FROM pages WHERE slug = ? AND id != ?').bind(newSlug, page.id).first()
-    if (conflict) throw new Error('já existe uma página com esse slug')
+    if (conflict) throw new EditorialError('já existe uma página com esse slug', 409)
   }
 
   const now = new Date().toISOString()
-  await env.DB.prepare('UPDATE pages SET slug = ?, title = ?, updated_at = ? WHERE id = ?').bind(newSlug, title, now, page.id).run()
+  statements.push(env.DB.prepare('UPDATE pages SET slug = ?, title = ?, updated_at = ? WHERE id = ?').bind(newSlug, title, now, page.id))
 
   if (newSlug !== oldSlug) {
-    await env.DB.prepare('UPDATE redirects SET to_slug = ? WHERE to_slug = ?').bind(newSlug, oldSlug).run()
-    await env.DB.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(newSlug).run()
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare('UPDATE redirects SET to_slug = ? WHERE to_slug = ?').bind(newSlug, oldSlug))
+    statements.push(env.DB.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(newSlug))
+    statements.push(env.DB.prepare(`
       INSERT INTO redirects (id, from_slug, to_slug, created_by_email, created_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(from_slug) DO UPDATE SET to_slug = excluded.to_slug, created_by_email = excluded.created_by_email, created_at = excluded.created_at
-    `).bind(crypto.randomUUID(), oldSlug, newSlug, authorEmail, now).run()
+    `).bind(crypto.randomUUID(), oldSlug, newSlug, authorEmail, now))
   }
 
   const optional = await getOptionalTables(env)
   if (optional.pageAliases) {
-    await env.DB.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(newSlug).run()
+    statements.push(env.DB.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(newSlug))
   }
 
   await syncSearch(env, page.id, {
@@ -2062,9 +2205,12 @@ export async function renamePage(env: Env, slug: string, input: { title?: string
     subtitle: page.subtitle || '',
     content: normalizeEscapedBlockNewlines(page.content || ''),
     summary: input.summary || `renomeada de ${oldSlug} para ${newSlug}`
-  }, newSlug)
+  }, newSlug, statements)
 
-  return readPage(env, newSlug)
+  if (statements.length) await commitPageState(env, page.id, 'published', statements, page.current_revision_id, { slug: oldSlug, title: page.title })
+  const redirectRules = view.redirectRules.filter((rule: any) => rule.fromSlug !== newSlug)
+  if (newSlug !== oldSlug) redirectRules.push({ fromSlug: oldSlug, fragment: '' })
+  return { ...view, slug: newSlug, title, updatedAt: now, aliases: view.aliases.filter((alias: any) => alias.slug !== newSlug), redirectRules, redirects: redirectRules.map((rule: any) => rule.fromSlug) }
 }
 
 export async function listBrokenPageLinks(env: Env) {
@@ -2151,27 +2297,28 @@ export async function listAdvancedRedirects(env: Env) {
 
 export async function saveAdvancedRedirect(env: Env, input: { fromSlug?: string, toSlug?: string, fragment?: string }, authorEmail: string) {
   if (!env.DB) return null
+  const statements: D1PreparedStatement[] = []
 
   const fromSlug = slugFromTitle(input.fromSlug || '')
   const toSlug = slugFromTitle(input.toSlug || '')
   const fragment = cleanRedirectFragment(input.fragment)
-  if (!fromSlug || !toSlug) throw new Error('origem e destino são obrigatórios')
-  if (isReservedFilePageSlug(fromSlug)) throw new Error('o namespace /wiki/arquivo/ é reservado para uploads de mídia')
-  if (fromSlug === toSlug && !fragment) throw new Error('o redirecionamento não pode apontar para ele mesmo')
+  if (!fromSlug || !toSlug) throw new EditorialError('origem e destino são obrigatórios', 400)
+  if (isReservedFilePageSlug(fromSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
+  if (fromSlug === toSlug && !fragment) throw new EditorialError('o redirecionamento não pode apontar para ele mesmo', 400)
 
   const target = await env.DB.prepare("SELECT id, slug, title FROM pages WHERE slug = ? AND status = 'published'").bind(toSlug).first()
-  if (!target) throw new Error('a página de destino não existe')
+  if (!target) throw new EditorialError('a página de destino não existe', 400)
 
   const sourcePage = await env.DB.prepare("SELECT id FROM pages WHERE slug = ? AND status != 'deleted'").bind(fromSlug).first()
-  if (sourcePage) throw new Error('a origem já pertence a uma página publicada')
+  if (sourcePage) throw new EditorialError('a origem já pertence a uma página publicada', 409)
 
   const optional = await getOptionalTables(env)
-  if (optional.pageAliases) await env.DB.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(fromSlug).run()
+  if (optional.pageAliases) statements.push(env.DB.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(fromSlug))
 
   const now = new Date().toISOString()
   const columns = await getRedirectMetadataColumns(env)
   if (columns.targetFragment) {
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO redirects (id, from_slug, to_slug, target_fragment, created_by_email, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(from_slug) DO UPDATE SET
@@ -2179,18 +2326,19 @@ export async function saveAdvancedRedirect(env: Env, input: { fromSlug?: string,
         target_fragment = excluded.target_fragment,
         created_by_email = excluded.created_by_email,
         created_at = excluded.created_at
-    `).bind(crypto.randomUUID(), fromSlug, toSlug, fragment || null, authorEmail || null, now).run()
+    `).bind(crypto.randomUUID(), fromSlug, toSlug, fragment || null, authorEmail || null, now))
   } else {
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO redirects (id, from_slug, to_slug, created_by_email, created_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(from_slug) DO UPDATE SET
         to_slug = excluded.to_slug,
         created_by_email = excluded.created_by_email,
         created_at = excluded.created_at
-    `).bind(crypto.randomUUID(), fromSlug, toSlug, authorEmail || null, now).run()
+    `).bind(crypto.randomUUID(), fromSlug, toSlug, authorEmail || null, now))
   }
 
+  if (statements.length) await env.DB.batch(statements)
   return { ok: true, fromSlug, toSlug, fragment, targetTitle: (target as any).title, createdAt: now }
 }
 
@@ -2204,33 +2352,35 @@ export async function deleteAdvancedRedirect(env: Env, fromSlugValue: string) {
 
 export async function saveAdvancedAlias(env: Env, input: { aliasTitle?: string, toSlug?: string }) {
   if (!env.DB) return null
+  const statements: D1PreparedStatement[] = []
   const optional = await getOptionalTables(env)
-  if (!optional.pageAliases) throw new Error('aliases ainda não estão disponíveis no D1')
+  if (!optional.pageAliases) throw new EditorialError('aliases ainda não estão disponíveis no D1', 503)
 
   const aliasTitle = String(input.aliasTitle || '').trim()
   const aliasSlug = slugFromTitle(aliasTitle)
   const toSlug = slugFromTitle(input.toSlug || '')
-  if (!aliasTitle || !aliasSlug || !toSlug) throw new Error('alias e destino são obrigatórios')
-  if (isReservedFilePageSlug(aliasSlug)) throw new Error('o namespace /wiki/arquivo/ é reservado para uploads de mídia')
+  if (!aliasTitle || !aliasSlug || !toSlug) throw new EditorialError('alias e destino são obrigatórios', 400)
+  if (isReservedFilePageSlug(aliasSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
 
   const target: any = await env.DB.prepare("SELECT id, slug, title FROM pages WHERE slug = ? AND status = 'published'").bind(toSlug).first()
-  if (!target) throw new Error('a página de destino não existe')
-  if (aliasSlug === toSlug) throw new Error('o alias não pode ser igual à URL canônica')
+  if (!target) throw new EditorialError('a página de destino não existe', 400)
+  if (aliasSlug === toSlug) throw new EditorialError('o alias não pode ser igual à URL canônica', 400)
 
   const sourcePage = await env.DB.prepare("SELECT id FROM pages WHERE slug = ? AND status != 'deleted'").bind(aliasSlug).first()
-  if (sourcePage) throw new Error('o alias já pertence a uma página publicada')
+  if (sourcePage) throw new EditorialError('o alias já pertence a uma página publicada', 409)
 
-  await env.DB.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(aliasSlug).run()
+  statements.push(env.DB.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(aliasSlug))
   const now = new Date().toISOString()
-  await env.DB.prepare(`
+  statements.push(env.DB.prepare(`
     INSERT INTO page_aliases (id, page_id, alias_slug, alias_title, created_at)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(alias_slug) DO UPDATE SET
       page_id = excluded.page_id,
       alias_title = excluded.alias_title,
       created_at = excluded.created_at
-  `).bind(crypto.randomUUID(), target.id, aliasSlug, aliasTitle, now).run()
+  `).bind(crypto.randomUUID(), target.id, aliasSlug, aliasTitle, now))
 
+  if (statements.length) await env.DB.batch(statements)
   return { ok: true, aliasSlug, aliasTitle, toSlug, targetTitle: target.title, createdAt: now }
 }
 
@@ -2294,7 +2444,9 @@ export async function exportBackup(env: Env) {
     kind: 'wikicambada-core-backup',
     version: 1,
     exportedAt: new Date().toISOString(),
-    note: 'Este backup contém metadados e conteúdo do D1. Objetos R2 não são embutidos.',
+    scope: 'content-export',
+    recovery: false,
+    note: 'Exportação de conteúdo para seed. A importação cria revisões e não restaura uma instalação.',
     tables
   }
 }
@@ -2304,7 +2456,7 @@ function rowsFromSeedPayload(payload: any) {
   if (Array.isArray(payload?.pages)) return payload.pages
   if (Array.isArray(payload?.tables?.pages)) {
     return payload.tables.pages.filter((page: any) => page.status !== 'deleted').map((page: any) => {
-      const revision = (payload.tables.revisions || [])
+      const revision = (payload.tables.revisions || []).find((item: any) => item.id === page.current_revision_id) || (payload.tables.revisions || [])
         .filter((item: any) => item.page_id === page.id)
         .sort((a: any, b: any) => Number(b.revision_number || 0) - Number(a.revision_number || 0))[0]
       const categoryIds = new Set((payload.tables.page_categories || []).filter((item: any) => item.page_id === page.id).map((item: any) => item.category_id))
@@ -2319,7 +2471,8 @@ function rowsFromSeedPayload(payload: any) {
         categories,
         aliases,
         redirects,
-        summary: 'importado de backup'
+        redirectRules: (payload.tables.redirects || []).filter((redirect: any) => redirect.to_slug === page.slug).map((redirect: any) => ({ fromSlug: redirect.from_slug, fragment: redirect.target_fragment || '' })),
+        summary: 'importado de exportação de conteúdo'
       }
     })
   }
@@ -2328,7 +2481,10 @@ function rowsFromSeedPayload(payload: any) {
 
 export async function importSeed(env: Env, payload: any, authorEmail: string) {
   if (!env.DB) return null
-  const rows = rowsFromSeedPayload(payload).filter((row: any) => row && row.slug && row.title && row.content)
+  const sourceRows = rowsFromSeedPayload(payload)
+  if (!sourceRows.length) throw new EditorialError('nenhuma página válida para importar', 400)
+  const rows = sourceRows.filter((row: any) => row && row.slug && row.title && (row.content || row.content_markdown))
+  if (rows.length !== sourceRows.length) throw new EditorialError('o seed contém páginas incompletas', 400)
   const imported: any[] = []
   const failed: any[] = []
 
@@ -2342,11 +2498,12 @@ export async function importSeed(env: Env, payload: any, authorEmail: string) {
         categories: Array.isArray(row.categories) ? row.categories : [],
         aliases: Array.isArray(row.aliases) ? row.aliases : [],
         redirects: Array.isArray(row.redirects) ? row.redirects : [],
+        ...(Array.isArray(row.redirectRules) ? { redirectRules: row.redirectRules } : {}),
         summary: String(row.summary || 'importado de seed')
       }, authorEmail, null)
       imported.push({ slug: page?.slug || slug, title: page?.title || row.title })
     } catch (error) {
-      failed.push({ slug: row.slug || row.title || 'sem-slug', error: error instanceof Error ? error.message : 'erro interno' })
+      failed.push({ slug: row.slug || row.title || 'sem-slug', error: error instanceof EditorialError ? error.message : 'falha temporária de armazenamento' })
     }
   }
 
@@ -2686,11 +2843,11 @@ function cleanTemplateInput(input: ContentTemplateInput) {
   const title = String(input.title || '').trim()
   const call = normalizeEscapedBlockNewlines(String(input.call ?? input.contentMarkdown ?? input.content ?? '')).trim()
   const render = normalizeEscapedBlockNewlines(String(input.renderMarkdown ?? input.render ?? '')).trim()
-  if (!title) throw new Error('título do template ausente')
-  if (!call) throw new Error('chamada do template ausente')
+  if (!title) throw new EditorialError('título do template ausente', 400)
+  if (!call) throw new EditorialError('chamada do template ausente', 400)
 
   const slug = slugFromTitle(input.slug || title)
-  if (!slug) throw new Error('slug do template inválido')
+  if (!slug) throw new EditorialError('slug do template inválido', 400)
 
   return {
     id: String(input.id || '').trim(),
@@ -2711,20 +2868,21 @@ function cleanTemplateInput(input: ContentTemplateInput) {
 }
 
 async function hasContentTemplatesTable(env: Env) {
-  return Boolean(env.DB) && await tableExists(env, 'content_templates').catch(() => false)
+  return Boolean(env.DB) && await tableExists(env, 'content_templates')
 }
 
 async function seedContentTemplates(env: Env) {
   if (!env.DB || !await hasContentTemplatesTable(env)) return
-  const existing: any = await env.DB.prepare('SELECT COUNT(*) AS count FROM content_templates').first().catch(() => null)
+  const existing: any = await env.DB.prepare('SELECT COUNT(*) AS count FROM content_templates').first()
   if (Number(existing?.count || 0) > 0) return
 
   const columns = await getContentTemplateColumns(env)
   const hasExtras = templateExtraColumns.every(column => columns.has(column))
   const now = new Date().toISOString()
+  const statements: D1PreparedStatement[] = []
   for (const template of defaultContentTemplates()) {
     if (hasExtras) {
-      await env.DB.prepare(`
+      statements.push(env.DB.prepare(`
         INSERT INTO content_templates (id, slug, title, description, group_name, content_markdown, render_markdown, params_markdown, template_kind, image_url, image_position, accent_color, min_role, status, created_by_email, updated_by_email, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, ?)
         ON CONFLICT(slug) DO NOTHING
@@ -2745,11 +2903,11 @@ async function seedContentTemplates(env: Env) {
         template.status,
         now,
         now
-      ).run()
+      ))
       continue
     }
 
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO content_templates (id, slug, title, description, group_name, content_markdown, min_role, status, created_by_email, updated_by_email, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'system', 'system', ?, ?)
       ON CONFLICT(slug) DO NOTHING
@@ -2764,18 +2922,20 @@ async function seedContentTemplates(env: Env) {
       template.status,
       now,
       now
-    ).run()
+    ))
   }
+  if (statements.length) await env.DB.batch(statements)
 }
 
 export async function listContentTemplates(env: Env, options: { includeDisabled?: boolean, role?: string } = {}) {
   const role = normalizeTemplateRole(options.role || 'guest')
 
-  if (!env.DB || !await hasContentTemplatesTable(env)) {
+  if (!env.DB) {
     return defaultContentTemplates()
       .filter(template => (options.includeDisabled || template.status === 'active') && templateAllowedForRole(template, role))
   }
 
+  if (!await hasContentTemplatesTable(env)) throw new EditorialError('migração de templates não aplicada', 503)
   await seedContentTemplates(env)
   const rows = await env.DB.prepare(`
     SELECT *
@@ -2791,7 +2951,7 @@ export async function listContentTemplates(env: Env, options: { includeDisabled?
 
 export async function saveContentTemplate(env: Env, input: ContentTemplateInput, authorEmail: string) {
   if (!env.DB) return null
-  if (!await hasContentTemplatesTable(env)) throw new Error('migração de templates não aplicada')
+  if (!await hasContentTemplatesTable(env)) throw new EditorialError('migração de templates não aplicada', 503)
 
   const clean = cleanTemplateInput(input)
   const columns = await getContentTemplateColumns(env)
@@ -2801,9 +2961,10 @@ export async function saveContentTemplate(env: Env, input: ContentTemplateInput,
     ? await env.DB.prepare('SELECT id FROM content_templates WHERE id = ?').bind(clean.id).first()
     : await env.DB.prepare('SELECT id FROM content_templates WHERE slug = ?').bind(clean.slug).first()
   const id = existing?.id || clean.id || crypto.randomUUID()
+  let row: any
 
   if (hasExtras) {
-    await env.DB.prepare(`
+    row = await env.DB.prepare(`
       INSERT INTO content_templates (id, slug, title, description, group_name, content_markdown, render_markdown, params_markdown, template_kind, image_url, image_position, accent_color, min_role, status, created_by_email, updated_by_email, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
@@ -2822,6 +2983,7 @@ export async function saveContentTemplate(env: Env, input: ContentTemplateInput,
         status = excluded.status,
         updated_by_email = excluded.updated_by_email,
         updated_at = excluded.updated_at
+      RETURNING *
     `).bind(
       id,
       clean.slug,
@@ -2841,9 +3003,9 @@ export async function saveContentTemplate(env: Env, input: ContentTemplateInput,
       authorEmail,
       now,
       now
-    ).run()
+    ).first()
   } else {
-    await env.DB.prepare(`
+    row = await env.DB.prepare(`
       INSERT INTO content_templates (id, slug, title, description, group_name, content_markdown, min_role, status, created_by_email, updated_by_email, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
@@ -2856,6 +3018,7 @@ export async function saveContentTemplate(env: Env, input: ContentTemplateInput,
         status = excluded.status,
         updated_by_email = excluded.updated_by_email,
         updated_at = excluded.updated_at
+      RETURNING *
     `).bind(
       id,
       clean.slug,
@@ -2869,16 +3032,15 @@ export async function saveContentTemplate(env: Env, input: ContentTemplateInput,
       authorEmail,
       now,
       now
-    ).run()
+    ).first()
   }
 
-  const row: any = await env.DB.prepare('SELECT * FROM content_templates WHERE id = ?').bind(id).first()
   return row ? templateRowToTemplate(row) : null
 }
 
 export async function deleteContentTemplate(env: Env, id: string) {
   if (!env.DB) return null
-  if (!await hasContentTemplatesTable(env)) throw new Error('migração de templates não aplicada')
+  if (!await hasContentTemplatesTable(env)) throw new EditorialError('migração de templates não aplicada', 503)
   const result = await env.DB.prepare('DELETE FROM content_templates WHERE id = ?').bind(id).run()
   return { ok: Boolean(result.meta?.changes), id }
 }
@@ -3019,7 +3181,7 @@ export function clientIpFromRequest(request: Request) {
   )
 }
 
-export async function listStorageOverview(env: Env, options: { search?: string, limit?: number } = {}) {
+export async function listStorageOverview(env: Env, options: { search?: string, limit?: number, offset?: number, cursor?: string } = {}) {
   if (!env.DB) return null
   const files = await listUploads(env, options)
   const tables = await Promise.all([
@@ -3033,23 +3195,36 @@ export async function listStorageOverview(env: Env, options: { search?: string, 
     'ip_rules'
   ].map(async table => ({ table, rows: await tableCount(env, table) })))
 
+  const totals: any = await env.DB.prepare("SELECT COUNT(*) AS total, COALESCE(SUM(size_bytes), 0) AS bytes FROM uploads WHERE COALESCE(status, 'published') = 'published'").first()
+  let r2ObjectCount = 0
+  let r2NextCursor: string | null = null
   let r2Objects: any[] = []
   if (env.WIKI_BUCKET) {
-    const listed = await env.WIKI_BUCKET.list({ prefix: 'uploads/', limit: 100 })
+    const listed = await env.WIKI_BUCKET.list({ prefix: 'uploads/', limit: 100, cursor: options.cursor })
+    r2NextCursor = listed.truncated ? listed.cursor : null
     r2Objects = (listed.objects || []).map(object => ({
       key: object.key,
       size: object.size,
       uploaded: object.uploaded?.toISOString?.() || String(object.uploaded || ''),
       etag: object.etag || ''
     }))
+    let cursor: string | undefined
+    do {
+      const page = await env.WIKI_BUCKET.list({ prefix: 'uploads/', limit: 1000, cursor })
+      r2ObjectCount += page.objects.length
+      cursor = page.truncated ? page.cursor : undefined
+    } while (cursor)
   }
 
   return {
     files,
     d1Tables: tables,
     r2Objects,
-    r2ObjectCount: r2Objects.length,
-    totalUploadBytes: files.reduce((sum: number, file: any) => sum + Number(file.sizeBytes || 0), 0)
+    r2ObjectCount,
+    r2NextCursor,
+    uploadCount: Number(totals?.total || 0),
+    nextOffset: files.length === Math.min(options.limit || 80, 200) ? (options.offset || 0) + files.length : null,
+    totalUploadBytes: Number(totals?.bytes || 0)
   }
 }
 
@@ -3061,18 +3236,20 @@ export async function updateUploadMetadata(env: Env, slug: string, input: { file
   const now = new Date().toISOString()
   const filename = String(input.filename || file.filename || '').trim().slice(0, 180) || file.filename
   const description = String(input.description ?? file.description ?? '').trim().slice(0, 500)
+  let row: any
 
   if (columns.description && columns.updatedAt) {
-    await env.DB.prepare(`
+    row = await env.DB.prepare(`
       UPDATE uploads
       SET filename = ?, description = ?, updated_at = ?
-      WHERE id = ?
-    `).bind(filename, description || null, now, file.id).run()
+      WHERE id = ? AND COALESCE(status, 'published') = 'published'
+      RETURNING *
+    `).bind(filename, description || null, now, file.id).first()
   } else {
-    await env.DB.prepare('UPDATE uploads SET filename = ? WHERE id = ?').bind(filename, file.id).run()
+    row = await env.DB.prepare("UPDATE uploads SET filename = ? WHERE id = ? AND COALESCE(status, 'published') = 'published' RETURNING *").bind(filename, file.id).first()
   }
 
-  return readUpload(env, file.slug || file.id)
+  return uploadRowToFile(row)
 }
 
 export async function deleteUpload(env: Env, slug: string, authorEmail = '') {
@@ -3093,12 +3270,12 @@ export async function listIpRules(env: Env) {
 
 export async function createIpRule(env: Env, input: { ip?: string, action?: string, reason?: string }, authorEmail: string) {
   if (!env.DB) return null
-  if (!(await tableExists(env, 'ip_rules'))) throw new Error('a tabela ip_rules ainda não foi criada')
+  if (!(await tableExists(env, 'ip_rules'))) throw new EditorialError('a tabela ip_rules ainda não foi criada', 503)
   const parsedIp = parseIpRule(String(input.ip || ''))
   const ip = parsedIp?.normalized || ''
   const action = String(input.action || '').trim()
-  if (!ip) throw new Error('ip/cidr inválido')
-  if (!['block_suggestions', 'ban_site'].includes(action)) throw new Error('ação de IP inválida')
+  if (!ip) throw new EditorialError('ip/cidr inválido', 400)
+  if (!['block_suggestions', 'ban_site'].includes(action)) throw new EditorialError('ação de IP inválida', 400)
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
   await env.DB.prepare(`
@@ -3170,29 +3347,14 @@ export async function ensureEditorProfile(env: Env, email: string, fallbackName:
   const now = new Date().toISOString()
   const role = cleanEmail === superAdminEmail(env) ? 'super_admin' : 'editor'
 
+  await env.DB.prepare(`INSERT INTO editor_profiles (id, email, display_name, role, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(email) DO NOTHING`).bind(crypto.randomUUID(), cleanEmail, fallbackName || null, role, now, now).run()
   const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(cleanEmail).first()
-  if (!existing) {
-    try {
-      await env.DB.prepare(`
-        INSERT INTO editor_profiles (id, email, display_name, role, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', ?, ?)
-      `).bind(crypto.randomUUID(), cleanEmail, fallbackName || null, role, now, now).run()
-    } catch {
-      await env.DB.prepare(`
-        INSERT INTO editor_profiles (id, email, display_name, role, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).bind(crypto.randomUUID(), cleanEmail, fallbackName || null, role, now, now).run()
-    }
-    return ensureEditorProfile(env, cleanEmail, fallbackName)
+  if (!existing) throw new EditorialError('perfil indisponível', 503)
+  if (cleanEmail === superAdminEmail(env) && existing.role !== 'super_admin' && existing.status === 'active') {
+    await env.DB.prepare('UPDATE editor_profiles SET role = ?, updated_at = ? WHERE email = ? AND status = ?').bind('super_admin', now, cleanEmail, 'active').run()
+    existing.role = 'super_admin'
   }
-
-  if (cleanEmail === superAdminEmail(env) && existing.role !== 'super_admin') {
-    await env.DB.prepare('UPDATE editor_profiles SET role = ?, status = ?, updated_at = ? WHERE email = ?')
-      .bind('super_admin', 'active', now, cleanEmail)
-      .run()
-    return ensureEditorProfile(env, cleanEmail, fallbackName)
-  }
-
   return userRowToProfile(existing)
 }
 
@@ -3201,10 +3363,10 @@ export async function updateOwnEditorProfile(env: Env, email: string, input: { d
   if (!profile || !env.DB) return null
   const now = new Date().toISOString()
   const displayName = String(input.displayName || '').trim().slice(0, 80)
-  await env.DB.prepare('UPDATE editor_profiles SET display_name = ?, updated_at = ? WHERE email = ?')
+  const row = await env.DB.prepare("UPDATE editor_profiles SET display_name = ?, updated_at = ? WHERE email = ? AND status = 'active' RETURNING *")
     .bind(displayName || null, now, profile.email)
-    .run()
-  return ensureEditorProfile(env, profile.email)
+    .first()
+  return userRowToProfile(row)
 }
 
 export async function listEditorUsers(env: Env) {
@@ -3223,50 +3385,53 @@ export async function listEditorUsers(env: Env) {
 
 export async function updateEditorUser(env: Env, actorEmail: string, input: { email?: string, displayName?: string, role?: string, status?: string }) {
   if (!env.DB) return null
-  const actor = await ensureEditorProfile(env, actorEmail)
+  const actor: any = await env.DB.prepare('SELECT role, status FROM editor_profiles WHERE email = ?').bind(actorEmail).first()
   const actorRole = normalizeEditorRole(actor?.role)
-  if (!['admin', 'super_admin'].includes(actorRole)) throw new Error('permissão insuficiente')
+  if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actorRole)) throw new EditorialError('permissão insuficiente', 403)
 
   const email = String(input.email || '').trim().toLowerCase()
-  if (!email) throw new Error('e-mail ausente')
-  const target = await ensureEditorProfile(env, email)
-  if (!target) return null
-  if (target.role === 'super_admin' && actorRole !== 'super_admin') throw new Error('não é permitido alterar o super administrador')
+  if (!email) throw new EditorialError('e-mail ausente', 400)
+  const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
+  const target = existing ? userRowToProfile(existing)! : { role: email === superAdminEmail(env) ? 'super_admin' : 'editor', displayName: null }
+  if (target.role === 'super_admin' && actorRole !== 'super_admin') throw new EditorialError('não é permitido alterar o super administrador', 403)
 
-  const role = normalizeEditorRole(input.role || target.role)
-  if (role === 'super_admin' && email !== superAdminEmail(env)) throw new Error('super administrador fixo')
-  if (role === 'super_admin' && actorRole !== 'super_admin') throw new Error('permissão insuficiente')
+  const role = email === superAdminEmail(env) ? 'super_admin' : normalizeEditorRole(input.role || target.role)
+  if (role === 'super_admin' && email !== superAdminEmail(env)) throw new EditorialError('super administrador fixo', 403)
+  if (role === 'super_admin' && actorRole !== 'super_admin') throw new EditorialError('permissão insuficiente', 403)
 
   const status = input.status === 'disabled' ? 'disabled' : 'active'
   const displayName = String(input.displayName ?? target.displayName ?? '').trim().slice(0, 80)
   const now = new Date().toISOString()
 
-  await env.DB.prepare(`
-    UPDATE editor_profiles
-    SET display_name = ?, role = ?, status = ?, updated_at = ?
-    WHERE email = ?
-  `).bind(displayName || null, role, status, now, email).run()
+  const guardId = crypto.randomUUID()
+  const id = existing?.id || crypto.randomUUID()
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO core_write_guards VALUES (?, CASE WHEN EXISTS (SELECT 1 FROM editor_profiles WHERE email = ? AND status = 'active' AND role IN ('admin', 'super_admin') AND (? = 0 OR role = 'super_admin')) AND (? = 0 OR NOT EXISTS (SELECT 1 FROM editor_profiles WHERE email = ? AND role = 'super_admin')) THEN 1 ELSE 0 END)`).bind(guardId, actorEmail, role === 'super_admin' || target.role === 'super_admin' ? 1 : 0, actorRole === 'super_admin' ? 0 : 1, email),
+    env.DB.prepare(`INSERT INTO editor_profiles (id, email, display_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name, role = excluded.role, status = excluded.status, updated_at = excluded.updated_at`).bind(id, email, displayName || null, role, status, now, now),
+    env.DB.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId)
+  ])
 
-  return ensureEditorProfile(env, email)
+  return userRowToProfile({ ...existing, id, email, display_name: displayName, role, status, created_at: existing?.created_at || now, updated_at: now })
 }
 
 export async function deleteEditorUser(env: Env, actorEmail: string, emailInput: string) {
   if (!env.DB) return null
   const actor = await ensureEditorProfile(env, actorEmail)
   const actorRole = normalizeEditorRole(actor?.role)
-  if (!['admin', 'super_admin'].includes(actorRole)) throw new Error('permissão insuficiente')
+  if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actorRole)) throw new EditorialError('permissão insuficiente', 403)
 
   const email = String(emailInput || '').trim().toLowerCase()
-  if (!email) throw new Error('e-mail ausente')
-  if (email === superAdminEmail(env)) throw new Error('não é permitido remover o super administrador')
-  if (email === String(actor?.email || '').trim().toLowerCase()) throw new Error('não é permitido remover a própria conta')
+  if (!email) throw new EditorialError('e-mail ausente', 400)
+  if (email === superAdminEmail(env)) throw new EditorialError('não é permitido remover o super administrador', 403)
+  if (email === String(actor?.email || '').trim().toLowerCase()) throw new EditorialError('não é permitido remover a própria conta', 403)
 
   const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
   if (!existing) return null
   const target = userRowToProfile(existing)
-  if (target?.role === 'super_admin') throw new Error('não é permitido remover o super administrador')
+  if (target?.role === 'super_admin') throw new EditorialError('não é permitido remover o super administrador', 403)
 
-  await env.DB.prepare('DELETE FROM editor_profiles WHERE email = ?').bind(email).run()
+  await env.DB.prepare("DELETE FROM editor_profiles WHERE email = ? AND role != 'super_admin' AND EXISTS (SELECT 1 FROM editor_profiles actor WHERE actor.email = ? AND actor.status = 'active' AND actor.role IN ('admin', 'super_admin'))").bind(email, actorEmail).run()
   return { ok: true, email }
 }
 
@@ -3368,18 +3533,19 @@ async function setSetting(env: Env, key: string, value: any) {
 export async function getSystemStatus(env: Env) {
   const cacheVersion = await getSetting(env, 'cache_version', { value: 0, updatedAt: null })
   const reloadVersion = await getSetting(env, 'reload_version', { value: 0, updatedAt: null })
-  return { cacheVersion, reloadVersion, coreVersion: env.WIKI_CORE_VERSION || 'v1.1.0 Beta' }
+  const publicVersion = (value: any) => ({ value: Number(value?.value || 0), updatedAt: value?.updatedAt || null })
+  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.0-r2' }
 }
 
 export async function forceSystemRefresh(env: Env, mode: 'cache' | 'reload', authorEmail: string) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
   const key = mode === 'reload' ? 'reload_version' : 'cache_version'
-  const current = await getSetting(env, key, { value: 0 })
-  return setSetting(env, key, {
-    value: Number(current?.value || 0) + 1,
-    mode,
-    authorEmail,
-    updatedAt: new Date().toISOString()
-  })
+  const now = new Date().toISOString()
+  const initial = JSON.stringify({ value: 1, mode, authorEmail, updatedAt: now })
+  const row: any = await env.DB.prepare(`INSERT INTO system_settings (key, value_json, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value_json = json_set(excluded.value_json, '$.value', CASE WHEN json_valid(system_settings.value_json) THEN COALESCE(json_extract(system_settings.value_json, '$.value'), 0) ELSE 0 END + 1), updated_at = excluded.updated_at
+    RETURNING value_json`).bind(key, initial, now).first()
+  return { key, value: JSON.parse(row.value_json), updatedAt: now }
 }
 
 async function pageTrashRows(env: Env) {
@@ -3411,31 +3577,36 @@ export async function listTrash(env: Env) {
 
 export async function restoreDeletedPage(env: Env, slug: string, authorEmail: string) {
   if (!env.DB) return null
+  const statements: D1PreparedStatement[] = []
   const stored = await findStoredPageSlug(env, slug, 'deleted', { preferCanonical: false })
   if (!stored) return null
-  const page: any = await env.DB.prepare('SELECT id, slug, title, current_revision_id FROM pages WHERE id = ? AND status = ?').bind(stored.id, 'deleted').first()
+  const page: any = await env.DB.prepare('SELECT * FROM pages WHERE id = ? AND status = ?').bind(stored.id, 'deleted').first()
   if (!page) return null
   const now = new Date().toISOString()
-  await env.DB.prepare(`
+  statements.push(env.DB.prepare(`
     UPDATE pages SET status = 'published', deleted_at = NULL, deleted_by_email = NULL, purge_after = NULL, deleted_reason = NULL, updated_at = ? WHERE id = ?
-  `).bind(now, page.id).run()
+  `).bind(now, page.id))
 
   const contentRow: any = await env.DB.prepare('SELECT content_markdown AS content FROM revisions WHERE id = ?').bind(page.current_revision_id).first()
-  await syncSearch(env, page.id, { title: page.title, content: contentRow?.content || '', summary: `restaurada por ${authorEmail}` }, page.slug)
-  return readPage(env, page.slug)
+  const view = await hydratePage(env, { ...page, content: contentRow?.content || '' })
+  await syncSearch(env, page.id, { title: page.title, content: contentRow?.content || '', summary: `restaurada por ${authorEmail}` }, page.slug, statements)
+  if (statements.length) await commitPageState(env, page.id, 'deleted', statements)
+  return { ...view, status: 'published', updatedAt: now }
 }
 
 export async function hardDeletePage(env: Env, slug: string) {
   if (!env.DB) return null
+  const statements: D1PreparedStatement[] = []
   const stored = await findStoredPageSlug(env, slug, 'deleted', { preferCanonical: false })
   if (!stored) return null
   const page: any = await env.DB.prepare('SELECT id, slug, title FROM pages WHERE id = ? AND status = ?').bind(stored.id, 'deleted').first()
   if (!page) return null
-  await env.DB.prepare('DELETE FROM redirects WHERE from_slug = ? OR to_slug = ?').bind(page.slug, page.slug).run()
+  statements.push(env.DB.prepare('DELETE FROM redirects WHERE from_slug = ? OR to_slug = ?').bind(page.slug, page.slug))
   const optional = await getOptionalTables(env)
-  if (optional.pageAliases) await env.DB.prepare('DELETE FROM page_aliases WHERE page_id = ?').bind(page.id).run()
-  await env.DB.prepare('DELETE FROM page_search WHERE page_id = ?').bind(page.id).run()
-  await env.DB.prepare('DELETE FROM pages WHERE id = ?').bind(page.id).run()
+  if (optional.pageAliases) statements.push(env.DB.prepare('DELETE FROM page_aliases WHERE page_id = ?').bind(page.id))
+  statements.push(env.DB.prepare('DELETE FROM page_search WHERE page_id = ?').bind(page.id))
+  statements.push(env.DB.prepare('DELETE FROM pages WHERE id = ?').bind(page.id))
+  if (statements.length) await commitPageState(env, page.id, 'deleted', statements)
   return { ok: true, slug: page.slug, title: page.title }
 }
 
@@ -3456,10 +3627,12 @@ export async function softDeleteUpload(env: Env, slug: string, authorEmail: stri
 export async function restoreDeletedUpload(env: Env, slug: string) {
   if (!env.DB) return null
   const cleanSlug = slugFromTitle(slug)
-  const row: any = await env.DB.prepare('SELECT id, COALESCE(file_slug, id) AS slug FROM uploads WHERE (file_slug = ? OR id = ?) AND status = ?').bind(cleanSlug, slug, 'deleted').first()
+  const row: any = await env.DB.prepare('SELECT * FROM uploads WHERE (file_slug = ? OR id = ?) AND status = ?').bind(cleanSlug, slug, 'deleted').first()
   if (!row) return null
-  await env.DB.prepare('UPDATE uploads SET status = ?, deleted_at = NULL, deleted_by_email = NULL, purge_after = NULL WHERE id = ?').bind('published', row.id).run()
-  return readUpload(env, row.slug || row.id)
+  if (!env.WIKI_BUCKET || !(await env.WIKI_BUCKET.head(String(row.r2_key)))) throw new EditorialError('objeto de mídia indisponível', 503)
+  const restored = await env.DB.prepare('UPDATE uploads SET status = ?, deleted_at = NULL, deleted_by_email = NULL, purge_after = NULL WHERE id = ? AND status = ? RETURNING *').bind('published', row.id, 'deleted').first()
+  if (!restored) throw new EditorialError('o estado do arquivo foi modificado')
+  return uploadRowToFile(restored)
 }
 
 export async function hardDeleteUpload(env: Env, slug: string) {
@@ -3467,12 +3640,28 @@ export async function hardDeleteUpload(env: Env, slug: string) {
   const cleanSlug = slugFromTitle(slug)
   const row: any = await env.DB.prepare('SELECT id, COALESCE(file_slug, id) AS slug, r2_key AS r2Key, filename FROM uploads WHERE (file_slug = ? OR id = ?) AND status = ?').bind(cleanSlug, slug, 'deleted').first()
   if (!row) return null
-  if (env.WIKI_BUCKET && row.r2Key) await env.WIKI_BUCKET.delete(row.r2Key)
-  await env.DB.prepare('DELETE FROM uploads WHERE id = ?').bind(row.id).run()
+  if (!env.WIKI_BUCKET) throw new EditorialError('armazenamento de mídia indisponível', 503)
+  await env.DB.batch([
+    env.DB.prepare('INSERT OR IGNORE INTO r2_cleanup (r2_key, created_at) VALUES (?, ?)').bind(row.r2Key, new Date().toISOString()),
+    env.DB.prepare('DELETE FROM uploads WHERE id = ? AND status = ?').bind(row.id, 'deleted')
+  ])
+  await reconcileR2Cleanup(env)
   return { ok: true, slug: row.slug, filename: row.filename }
 }
 
+export async function reconcileR2Cleanup(env: Env) {
+  if (!env.DB || !env.WIKI_BUCKET) return
+  const rows = await env.DB.prepare('SELECT r2_key FROM r2_cleanup LIMIT 100').all()
+  for (const row of rows.results || []) {
+    const referenced = await env.DB.prepare('SELECT id FROM uploads WHERE r2_key = ?').bind(row.r2_key).first()
+    if (referenced) continue
+    await env.WIKI_BUCKET.delete(String(row.r2_key))
+    await env.DB.prepare('DELETE FROM r2_cleanup WHERE r2_key = ?').bind(row.r2_key).run()
+  }
+}
+
 export async function purgeExpiredTrash(env: Env) {
+  await reconcileR2Cleanup(env)
   if (!env.DB) return { pages: [], files: [] }
   const now = new Date().toISOString()
   const pageRows = await env.DB.prepare('SELECT slug FROM pages WHERE status = ? AND purge_after IS NOT NULL AND purge_after <= ? LIMIT 200').bind('deleted', now).all()
@@ -3570,7 +3759,7 @@ function flattenSettings(input: Record<string, any>, prefix = '', output: Record
 
 export async function getGlobalSettings(env: Env) {
   const values = globalSettingDefaults(env)
-  if (!env.DB || !(await tableExists(env, 'global_settings').catch(() => false))) return nestedSettings(values)
+  if (!env.DB || !(await tableExists(env, 'global_settings'))) return nestedSettings(values)
 
   const rows = await env.DB.prepare('SELECT setting_key AS settingKey, value_json AS valueJson FROM global_settings').all()
   for (const row of rows.results || []) {
@@ -3578,8 +3767,9 @@ export async function getGlobalSettings(env: Env) {
     if (!(key in GLOBAL_SETTING_DEFAULTS)) continue
     try {
       const parsed = JSON.parse(String((row as any).valueJson || 'false'))
-      if (typeof parsed === 'boolean') values[key] = parsed
-    } catch {}
+      if (typeof parsed !== 'boolean') throw new Error('invalid setting')
+      values[key] = parsed
+    } catch { throw new EditorialError('configuração global inválida', 503) }
   }
   return nestedSettings(values)
 }
@@ -3587,37 +3777,41 @@ export async function getGlobalSettings(env: Env) {
 export async function globalSettingEnabled(env: Env, key: string, fallback = true) {
   const configured = globalSettingDefaults(env)
   const defaults = key in configured ? configured[key] : fallback
-  if (!env.DB || !(await tableExists(env, 'global_settings').catch(() => false))) return defaults
+  if (!env.DB || !(await tableExists(env, 'global_settings'))) return defaults
   const row: any = await env.DB.prepare('SELECT value_json AS valueJson FROM global_settings WHERE setting_key = ?').bind(key).first()
   if (!row) return defaults
   try {
     const parsed = JSON.parse(String(row.valueJson || 'false'))
-    return typeof parsed === 'boolean' ? parsed : defaults
+    if (typeof parsed !== 'boolean') throw new Error('invalid setting')
+    return parsed
   } catch {
-    return defaults
+    throw new EditorialError('configuração global inválida', 503)
   }
 }
 
 export async function saveGlobalSettings(env: Env, input: Record<string, any>, actorEmail: string) {
-  if (!env.DB) throw new Error('D1 ainda não foi ligado')
-  if (!(await tableExists(env, 'global_settings').catch(() => false))) throw new Error('aplique a migration 0015 antes de salvar configurações globais')
+  if (!env.DB) throw new EditorialError('D1 ainda não foi ligado', 503)
+  if (!(await tableExists(env, 'global_settings'))) throw new EditorialError('aplique a migration 0015 antes de salvar configurações globais', 503)
 
   const flat = flattenSettings(input)
   const now = new Date().toISOString()
+  const previous = flattenSettings(await getGlobalSettings(env))
   const saved: Record<string, boolean> = {}
+  const statements: D1PreparedStatement[] = []
 
   for (const [key, value] of Object.entries(flat)) {
     if (!(key in GLOBAL_SETTING_DEFAULTS)) continue
-    await env.DB.prepare(`
+    statements.push(env.DB.prepare(`
       INSERT INTO global_settings (setting_key, value_json, updated_at, updated_by_email)
       VALUES (?, ?, ?, ?)
       ON CONFLICT(setting_key) DO UPDATE SET
         value_json = excluded.value_json,
         updated_at = excluded.updated_at,
         updated_by_email = excluded.updated_by_email
-    `).bind(key, JSON.stringify(Boolean(value)), now, actorEmail).run()
+    `).bind(key, JSON.stringify(Boolean(value)), now, actorEmail))
     saved[key] = Boolean(value)
   }
 
-  return { settings: await getGlobalSettings(env), saved: nestedSettings(saved), updatedAt: now }
+  if (statements.length) await env.DB.batch(statements)
+  return { settings: nestedSettings({ ...previous, ...saved }), saved: nestedSettings(saved), updatedAt: now }
 }

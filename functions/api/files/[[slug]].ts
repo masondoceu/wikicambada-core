@@ -1,4 +1,4 @@
-import { hasDb, readUpload, normalizeSlug, type Env } from '../_lib/d1'
+import { globalSettingEnabled, hasDb, readUpload, normalizeSlug, type Env } from '../_lib/d1'
 import { error, json } from '../_lib/response'
 
 type Context = EventContext<Env, string, { slug?: string[] | string }>
@@ -12,7 +12,12 @@ function cleanFilenameHeader(value: string) {
   return String(value || 'arquivo').replace(/["\\\r\n]/g, '') || 'arquivo'
 }
 
+function safeInlineType(value: string | null) {
+  return /^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|ogg|quicktime|x-m4v)|audio\/(mpeg|mp3|ogg|wav|wave|x-wav|webm|flac|aac|mp4|x-m4a))$/i.test(String(value || ''))
+}
+
 export async function onRequestGet({ env, params }: Context) {
+  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('mídia desativada', 403)
   const parts = parsePath(params.slug)
   const wantsContent = parts[parts.length - 1] === 'content'
   const slugParts = wantsContent ? parts.slice(0, -1) : parts
@@ -24,7 +29,11 @@ export async function onRequestGet({ env, params }: Context) {
   const file = await readUpload(env, slug)
   if (!file) return error('arquivo não encontrado', 404)
 
-  if (!wantsContent) return json(file)
+  if (!wantsContent) {
+    const { uploadedByEmail, deletedByEmail, r2Key, ...publicFile } = file
+    const profile: any = uploadedByEmail ? await env.DB!.prepare('SELECT display_name FROM editor_profiles WHERE email = ?').bind(uploadedByEmail).first() : null
+    return json({ ...publicFile, uploadedByName: profile?.display_name || 'editor' })
+  }
   if (!env.WIKI_BUCKET) return error('R2 ainda não foi ligado para servir arquivos', 501)
 
   const object = await env.WIKI_BUCKET.get(file.r2Key)
@@ -32,9 +41,11 @@ export async function onRequestGet({ env, params }: Context) {
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)
+  const inline = safeInlineType(headers.get('content-type'))
+  if (!inline) headers.set('content-type', 'application/octet-stream')
   headers.set('etag', object.httpEtag)
   headers.set('cache-control', 'public, max-age=31536000, immutable')
-  headers.set('content-disposition', `inline; filename="${cleanFilenameHeader(file.filename)}"`)
+  headers.set('content-disposition', `${inline ? 'inline' : 'attachment'}; filename="${cleanFilenameHeader(file.filename)}"`)
 
   return new Response(object.body, { headers })
 }

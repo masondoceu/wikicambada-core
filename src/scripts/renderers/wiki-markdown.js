@@ -1,4 +1,4 @@
-import { SITE_NAME } from '../core/config.js'
+import { SITE_NAME, featureEnabled } from '../core/config.js'
 import { isCurrentAppUrl, escapeHtml, normalizeKey, pageUrl, slugify, talkPageSlug, userPageSlug } from '../core/utils.js'
 import { HOME_SLUG, SLOGAN } from '../core/config.js'
 
@@ -12,6 +12,17 @@ function safeHref(url) {
   }
 
   return '#'
+}
+
+function safeMediaSource(value) {
+  const clean = cleanTypedMediaSource(value)
+  try {
+    const parsed = new URL(clean, window.location.href)
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return ''
+    return isCurrentAppUrl(parsed.href) ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.href
+  } catch {
+    return ''
+  }
 }
 
 function internalLinkAttributes(url) {
@@ -172,9 +183,10 @@ function replaceTemplatePlaceholders(source, data) {
 }
 
 function templateImageHtml(src, title = '', caption = '') {
-  if (!src) return ''
-  const attrs = mediaAttributes({ src, title, caption })
-  return `<img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(title || caption || 'imagem do template')}" ${attrs} />`
+  const safeSrc = safeMediaSource(src)
+  if (!safeSrc) return ''
+  const attrs = mediaAttributes({ src: safeSrc, title, caption })
+  return `<img loading="lazy" decoding="async" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(title || caption || 'imagem do template')}" ${attrs} />`
 }
 
 function renderWikiTemplateShell({
@@ -351,6 +363,7 @@ function renderRegisteredTemplate(data, options = {}) {
 }
 
 function renderTemplateBlock(value, options = {}) {
+  if (!featureEnabled('templates')) return `<p>${escapeHtml(value)}</p>`
   const data = parseTemplateParts(value)
   const name = normalizeKey(data.name)
 
@@ -431,13 +444,21 @@ function mediaDetailsFromSource(src, explicit = '') {
     } catch {}
 
     const match = String(src || '').match(/\/api\/files\/([^/?#]+)\/content(?:[?#].*)?$/i)
-    if (match?.[1]) return pageUrl(`arquivo/${decodeURIComponent(match[1])}`)
+    if (match?.[1]) {
+      try {
+        return pageUrl(`arquivo/${decodeURIComponent(match[1])}`)
+      } catch {
+        return ''
+      }
+    }
     return ''
   })()
 
   if (!explicit) return inferred
-  if (/\/api\/files\/[^/?#]+\/content(?:[?#].*)?$/i.test(String(explicit))) return inferred || explicit
-  return explicit
+  const safeExplicit = safeHref(explicit)
+  if (safeExplicit === '#') return inferred
+  if (/\/api\/files\/[^/?#]+\/content(?:[?#].*)?$/i.test(String(safeExplicit))) return inferred || safeExplicit
+  return safeExplicit
 }
 
 function mediaKindFromSource(src, explicit = '') {
@@ -462,12 +483,12 @@ function mediaAttributes({ src, type = '', title = '', caption = '', details = '
   const mediaType = mediaKindFromSource(src, type)
   const detailUrl = mediaDetailsFromSource(cleanSrc, details)
   const embed = mediaType === 'video' ? youtubeEmbedUrl(cleanSrc) : ''
+  const mediaSrc = embed ? cleanSrc : safeMediaSource(cleanSrc)
   const interactive = mediaType === 'image'
     ? [
       'data-media-viewer',
       'role="button"',
       'tabindex="0"',
-      'onclick="window.WikiCambadaMediaViewer?.openFromElement(this); return false"'
     ]
     : []
 
@@ -475,7 +496,7 @@ function mediaAttributes({ src, type = '', title = '', caption = '', details = '
     ...interactive,
     'draggable="false"',
     `data-media-type="${escapeHtml(mediaType)}"`,
-    `data-media-src="${escapeHtml(cleanSrc)}"`,
+    mediaSrc ? `data-media-src="${escapeHtml(mediaSrc)}"` : '',
     embed ? `data-media-embed="${escapeHtml(embed)}"` : '',
     `data-media-title="${escapeHtml(title)}"`,
     `data-media-caption="${escapeHtml(cleanHeadingText(caption))}"`,
@@ -490,50 +511,56 @@ function mediaElementHtml({ src, type = '', attrs = '', alt = '', title = '' }) 
   if (embed) {
     return `<iframe class="wiki-media-iframe" src="${escapeHtml(embed)}" title="${escapeHtml(title || alt || 'vídeo incorporado')}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen ${attrs}></iframe>`
   }
-  if (mediaType === 'video') return `<video src="${escapeHtml(cleanSrc)}" controls preload="metadata" ${attrs}></video>`
-  if (mediaType === 'audio') return `<audio src="${escapeHtml(cleanSrc)}" controls preload="metadata" ${attrs}></audio>`
-  return `<img loading="lazy" decoding="async" src="${escapeHtml(cleanSrc)}" alt="${escapeHtml(alt)}" ${attrs} />`
+  const safeSrc = safeMediaSource(cleanSrc)
+  if (!safeSrc) return ''
+  if (mediaType === 'video') return `<video src="${escapeHtml(safeSrc)}" controls preload="metadata" ${attrs}></video>`
+  if (mediaType === 'audio') return `<audio src="${escapeHtml(safeSrc)}" controls preload="metadata" ${attrs}></audio>`
+  return `<img loading="lazy" decoding="async" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(alt)}" ${attrs} />`
+}
+
+function decodeEntities(value) {
+  return String(value || '').replace(/&(?:amp|lt|gt|quot|apos|#0*39|#\d+|#x[\da-f]+);/gi, entity => {
+    const named = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&#39;': "'" }
+    if (entity.toLowerCase() in named) return named[entity.toLowerCase()]
+    const code = entity.toLowerCase().startsWith('&#x') ? parseInt(entity.slice(3, -1), 16) : parseInt(entity.slice(2, -1), 10)
+    return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : entity
+  })
 }
 
 export function inlineMarkdown(text) {
-  const codeParts = []
-  const withCodeTokens = String(text || '').replace(/`([^`]+)`/g, (_, code) => {
-    const token = `@@WIKICAMBADA_CODE_${codeParts.length}@@`
-    codeParts.push(`<code>${escapeHtml(code)}</code>`)
-    return token
+  const parts = []
+  const protect = html => { const token = `@@WIKICAMBADA_INLINE_${parts.length}@@`; parts.push(html); return token }
+  let raw = String(text || '').replace(/`([^`]+)`/g, (_, code) => protect(`<code>${escapeHtml(code)}</code>`))
+  raw = raw.replace(/!\[([^\]]*)]\(([^)]+)\)/g, (_, alt, url) => {
+    alt = decodeEntities(alt)
+    const src = safeMediaSource(decodeEntities(url))
+    return protect(src ? `<img class="markdown-image" loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" ${mediaAttributes({ src, title: alt, caption: alt })} />` : escapeHtml(alt))
   })
-
-  let html = escapeHtml(withCodeTokens)
-    .replace(/!\[([^\]]*)]\(([^)]+)\)/g, (_, alt, url) => `<img class="markdown-image" loading="lazy" decoding="async" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" ${mediaAttributes({ src: url, title: alt, caption: alt })} />`)
-    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?]]/g, (_, target, label) => {
-      const cleanTarget = String(target || '').trim()
-      const category = cleanTarget.match(/^Categoria\s*:\s*(.+)$/i)
-      const file = cleanTarget.match(/^(Arquivo|File)\s*:\s*(.+)$/i)
-      const user = cleanTarget.match(/^Usu[aá]rio\s*:\s*(.+)$/i)
-      const talk = cleanTarget.match(/^(Discuss[aã]o|Talk)\s*:\s*(.+)$/i)
-      const slug = category
-        ? `categoria/${slugify(category[1])}`
-        : file
-          ? `arquivo/${slugify(file[2])}`
-          : user
-            ? userPageSlug(user[1])
-            : talk
-              ? talkPageSlug(talk[2])
-              : slugify(cleanTarget)
-      const text = label || (category ? category[1] : file ? file[2] : user ? user[1] : talk ? talk[2] : cleanTarget)
-      return `<a href="${pageUrl(slug)}" data-link="page" data-slug="${escapeHtml(slug)}">${escapeHtml(text)}</a>`
-    })
+  raw = raw.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?]]/g, (_, target, label) => {
+    const clean = decodeEntities(target).trim()
+    const index = clean.indexOf('#')
+    const fragment = index >= 0 ? clean.slice(index + 1) : ''
+    const cleanTarget = index >= 0 ? clean.slice(0, index) : clean
+    const category = cleanTarget.match(/^Categoria\s*:\s*(.+)$/i)
+    const file = cleanTarget.match(/^(Arquivo|File)\s*:\s*(.+)$/i)
+    const user = cleanTarget.match(/^Usu[aá]rio\s*:\s*(.+)$/i)
+    const talk = cleanTarget.match(/^(Discuss[aã]o|Talk)\s*:\s*(.+)$/i)
+    const path = value => String(value).split('/').filter(Boolean).map(slugify).join('/')
+    const slug = category ? `categoria/${path(category[1])}` : file ? `arquivo/${path(file[2])}` : user ? userPageSlug(user[1]) : talk ? talkPageSlug(talk[2]) : path(cleanTarget)
+    const display = decodeEntities(label || (category ? category[1] : file ? file[2] : user ? user[1] : talk ? talk[2] : clean))
+    const href = cleanTarget ? pageUrl(slug) : ''
+    return protect(`<a href="${escapeHtml(href + (fragment ? '#' + encodeURIComponent(fragment) : ''))}" data-link="page" data-slug="${escapeHtml(slug)}">${escapeHtml(display)}</a>`)
+  })
+  raw = raw.replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => {
+    const href = decodeEntities(url)
+    return protect(`<a href="${escapeHtml(safeHref(href))}"${internalLinkAttributes(href)}>${escapeHtml(decodeEntities(label))}</a>`)
+  })
+  let html = escapeHtml(decodeEntities(raw))
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_]+)__/g, '<u>$1</u>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/(^|\s)\*([^*\n]+)\*/g, '$1<em>$2</em>')
-    .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => `<a href="${escapeHtml(safeHref(url))}"${internalLinkAttributes(url)}>${label}</a>`)
-
-  codeParts.forEach((code, index) => {
-    html = html.replaceAll(`@@WIKICAMBADA_CODE_${index}@@`, code)
-  })
-
-  return html
+  return html.replace(/@@WIKICAMBADA_INLINE_(\d+)@@/g, (token, index) => parts[Number(index)] ?? token)
 }
 
 function extractComponentData(text) {
@@ -628,11 +655,13 @@ function collectInfoboxImages(data) {
 function renderInfoboxImages(images, title) {
   if (!images.length) return ''
   return images.map((item, index) => {
+    const src = safeMediaSource(item.src)
+    if (!src) return ''
     const caption = item.caption || ''
     const label = images.length > 1 ? `${title || 'Infocaixa'} ${index + 1}` : title
     return `
       <figure class="infobox-image">
-        <img loading="lazy" decoding="async" src="${escapeHtml(item.src)}" alt="${escapeHtml(caption || label || 'imagem da infocaixa')}" ${mediaAttributes({ src: item.src, title: label || caption, caption })} />
+        <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(caption || label || 'imagem da infocaixa')}" ${mediaAttributes({ src, title: label || caption, caption })} />
         ${caption ? `<figcaption class="infobox-caption">${inlineMarkdown(caption)}</figcaption>` : ''}
       </figure>
     `
