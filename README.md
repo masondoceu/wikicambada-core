@@ -10,8 +10,6 @@
 
 **WikiCambada Core** is a serverless wiki engine designed for the Cloudflare ecosystem. It combines a static web application with Pages Functions, D1, R2 and Cloudflare Access to provide Markdown articles, revisions, administration, media, search, categories, templates and collaboration without maintaining a traditional server.
 
-As of **v1.1.0-r2**, the Core no longer assumes that every installation is WikiCambada. The local setup lets operators configure the name, visual identity, fonts, navigation, features, access and bindings. WikiCambada is one installation of the same Core; other wikis, such as software documentation sites, can have their own appearance and behavior.
-
 ## Contents
 
 - [Use cases](#use-cases)
