@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
   "site": {
-    "name": "Heartbeat Wiki",
-    "shortName": "Heartbeat",
-    "tagline": "The Heartbeat software documentation",
-    "description": "The Heartbeat software documentation",
-    "language": "en",
-    "interfaceLanguage": "en",
-    "homeSlug": "main-page",
-    "baseUrl": "https://aboutheartbeat.pages.dev",
-    "supportEmail": "mason@cambada.party",
-    "aboutSlug": "about",
-    "editGuideSlug": "editing-guide",
-    "defaultCategory": "Heartbeat"
+    "name": "Minha Wiki",
+    "shortName": "Minha Wiki",
+    "tagline": "Uma wiki executada pelo WikiCambada Core",
+    "description": "Uma wiki executada pelo WikiCambada Core",
+    "language": "pt-BR",
+    "interfaceLanguage": "pt-BR",
+    "homeSlug": "pagina-principal",
+    "baseUrl": "",
+    "supportEmail": "",
+    "aboutSlug": "sobre",
+    "editGuideSlug": "como-editar",
+    "defaultCategory": ""
   },
   "branding": {
-    "logo": "/src/media/branding/logo.png",
-    "logoMobile": "/src/media/branding/logo.png",
-    "favicon": "/src/media/branding/favicon.png",
+    "logo": "/src/media/images/core/cat-guard.png",
+    "logoMobile": "/src/media/images/core/cat-guard.png",
+    "logoDark": "",
+    "favicon": "/src/media/images/core/cat-guard.png",
     "coreIcon": "/src/media/images/core/cat-guard.png",
     "coreWordmark": "/src/media/images/core/wikicambada-core-white.png",
     "poweredByBadge": "/src/media/images/poweredby-wikicambada-core.png",
     "randomIconManifest": "",
-    "randomIcons": false,
-    "logoDark": "/src/media/branding/logo-dark.png"
+    "randomIcons": false
   },
   "appearance": {
-    "accentColor": "#f72e4c",
+    "accentColor": "#3366cc",
     "defaultTheme": "auto",
     "fonts": {
       "interface": "system-ui, sans-serif",
@@ -35,41 +35,24 @@
     }
   },
   "features": {
-    "search": true,
-    "talkPages": false,
-    "userPages": false,
-    "publicSuggestions": false,
-    "pageHistory": true,
-    "mediaUploads": true,
-    "templates": true,
-    "categories": true,
-    "randomPage": false,
-    "coreBadge": true,
-    "activityLogging": true,
-    "specialPages": {
-      "index": true,
-      "version": true,
-      "recentPages": true,
-      "allPages": true,
-      "categories": true,
-      "randomPage": false
-    }
+    "cloudflareBadge": true,
+    "builtWithCloudflareBadge": false
   },
   "navigation": {
     "main": [
       {
-        "label": "Main page",
+        "label": "Página principal",
         "href": "/",
         "kind": "home"
       },
       {
-        "label": "Special pages",
+        "label": "Páginas especiais",
         "href": "/wiki/especial",
         "kind": "page",
         "feature": "specialPages.index"
       },
       {
-        "label": "Random page",
+        "label": "Página aleatória",
         "href": "/wiki/especial/pagina-aleatoria",
         "kind": "random",
         "feature": "randomPage"
@@ -77,26 +60,26 @@
     ],
     "community": [
       {
-        "label": "About",
-        "href": "/wiki/about",
+        "label": "Sobre",
+        "href": "/wiki/sobre",
         "kind": "page"
       },
       {
-        "label": "How to edit",
-        "href": "/wiki/editing-guide",
+        "label": "Como editar",
+        "href": "/wiki/como-editar",
         "kind": "page"
       }
     ],
     "external": []
   },
   "access": {
-    "mode": "public",
-    "superAdminEmail": "mason@national.shitposting.agency",
+    "mode": "cloudflare-access",
+    "superAdminEmail": "",
     "strict": true
   },
   "cloudflare": {
-    "projectName": "heartbeat-wiki",
-    "databaseName": "heartbeat-wiki-d1",
-    "bucketName": "heartbeat-wiki-r2"
+    "projectName": "my-wiki",
+    "databaseName": "my-wiki-db",
+    "bucketName": "my-wiki-uploads"
   }
 }

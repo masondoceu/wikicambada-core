@@ -29,7 +29,7 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
       return `${signed}.${Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keys.privateKey, new TextEncoder().encode(signed))).toString('base64url')}`
     }
     const bindings = { ACCESS_TEAM_DOMAIN: 'https://test.cloudflareaccess.com', ACCESS_AUD: 'test', ACCESS_STRICT: 'true', WIKI_SUPER_ADMIN_EMAIL: 'owner@example.com', WIKI_ACCESS_MODE: 'public' }
-    const legacyOptions = { modules: true, scriptPath: join(output, file), compatibilityDate: '2026-06-22', d1Databases: { DB: 'integration' }, r2Buckets: ['WIKI_BUCKET'], bindings, cf: false,
+    const legacyOptions = { modules: true, modulesRoot: output, scriptPath: join(output, file), compatibilityDate: '2026-06-22', d1Databases: { DB: 'integration' }, r2Buckets: ['WIKI_BUCKET'], bindings, cf: false,
       serviceBindings: { ASSETS: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) },
       outboundService: async request => { assert.equal(request.url, 'https://test.cloudflareaccess.com/cdn-cgi/access/certs'); return Response.json({ keys: [jwk] }) }
     }

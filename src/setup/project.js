@@ -110,20 +110,20 @@ export class Project {
     const generated = deepMerge(previous, { name: cloudflare.projectName, compatibility_date: old.compatibility_date || '2026-06-22', pages_build_output_dir: '.wikicambada/public', vars: { ACCESS_TEAM_DOMAIN: reuse ? old.vars?.ACCESS_TEAM_DOMAIN || '' : '', ACCESS_AUD: reuse ? old.vars?.ACCESS_AUD || '' : '', ACCESS_STRICT: String(access.strict), WIKI_ACCESS_MODE: access.mode, PUBLIC_BASE_URL: site.baseUrl, WIKI_SITE_NAME: site.name, WIKI_SUPER_ADMIN_EMAIL: access.superAdminEmail, WIKI_CORE_VERSION: this.release().displayVersion || 'v1.1.0-r2', WIKI_FEATURES_JSON: JSON.stringify(config.features) } })
     if (config.initialContent) generated.vars.WIKI_INITIAL_CONTENT = JSON.stringify(config.initialContent)
     else if (!reuse) delete generated.vars.WIKI_INITIAL_CONTENT
-    const db = { ...database, binding: 'DB', database_name: cloudflare.databaseName, database_id: reuseId ? database.database_id || '' : '', preview_database_id: reuseId ? database.preview_database_id || database.database_id || '' : '', migrations_dir: 'src/data/migrations', migrations_table: 'd1_migrations' }
+    const db = { ...(reuse ? database : {}), binding: 'DB', database_name: cloudflare.databaseName, database_id: reuseId ? database.database_id || '' : '', preview_database_id: reuseId ? database.preview_database_id || database.database_id || '' : '', migrations_dir: 'src/data/migrations', migrations_table: 'd1_migrations' }
     const bucket = { ...(reuse ? (old.r2_buckets || []).find(item => item.binding === 'WIKI_BUCKET') : {}), binding: 'WIKI_BUCKET', bucket_name: cloudflare.bucketName }
     generated.d1_databases = [...(reuse ? (old.d1_databases || []).filter(item => item.binding !== 'DB') : []), db]
     generated.r2_buckets = [...(reuse ? (old.r2_buckets || []).filter(item => item.binding !== 'WIKI_BUCKET') : []), bucket]
     fs.writeFileSync(file, vendor.toml.stringify(generated))
   }
-  generatePackage(config) {
+  generatePackage(config, packageName = config.cloudflare.projectName) {
     checkAncestors(this.file('package.json')); checkAncestors(this.file('package-lock.json'))
     const pkg = this.read('package.json'), name = config.cloudflare.projectName, database = config.cloudflare.databaseName
-    Object.assign(pkg, { name, version: this.release().version || '1.1.0-r2', private: true })
+    Object.assign(pkg, { name: packageName, version: this.release().version || '1.1.0-r2', private: true })
     pkg.scripts = { ...pkg.scripts, test: 'node src/scripts/test.mjs', typecheck: 'tsc --pretty false', build: 'node src/scripts/build-public.mjs', predev: 'npm run build', predeploy: 'npm run build', dev: 'node src/scripts/dev.mjs', deploy: `wrangler pages deploy .wikicambada/public --project-name ${name}`, 'db:migrations:apply:local': `wrangler d1 migrations apply ${database} --local`, 'db:migrations:apply:remote': `wrangler d1 migrations apply ${database} --remote`, setup: 'node setup.js', verify: 'node setup.js verify' }
     this.write('package.json', pkg)
     const lock = this.read('package-lock.json')
-    Object.assign(lock, { name, version: pkg.version }); lock.packages ||= {}; lock.packages[''] = { ...lock.packages[''], name, version: pkg.version }
+    Object.assign(lock, { name: packageName, version: pkg.version }); lock.packages ||= {}; lock.packages[''] = { ...lock.packages[''], name: packageName, version: pkg.version }
     this.write('package-lock.json', lock)
   }
   async save(payload) {
@@ -173,7 +173,7 @@ export class Project {
     add('produto da release', release.product === 'WikiCambada Core')
     add('versões do Core', release.version === pkg.version && pkg.version === this.installation().coreVersion)
     add('formato da versão', /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(release.version))
-    add('package-lock.json', lock.version === pkg.version && lock.packages?.['']?.version === pkg.version)
+    add('package-lock.json', lock.name === pkg.name && lock.packages?.['']?.name === pkg.name && lock.version === pkg.version && lock.packages?.['']?.version === pkg.version)
     try { validateConfig(structuredClone(this.config())); add('configuração da instalação', true) } catch (error) { add('configuração da instalação', false, error.message) }
     try {
       const wrangler = vendor.toml.parse(fs.readFileSync(this.file('wrangler.toml'), 'utf8')), databases = (wrangler.d1_databases || []).filter(item => item.binding === 'DB'), buckets = (wrangler.r2_buckets || []).filter(item => item.binding === 'WIKI_BUCKET'), db = databases[0]

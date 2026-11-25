@@ -216,6 +216,17 @@ test('ZIP regular sem bits de tipo é aceito e caminhos ambíguos são recusados
 
 test('badge, distribuição genérica e build seguro sobrevivem à configuração e atualização', async () => {
   const project = await fixture()
+  const pkg = project.read('package.json'), lock = project.read('package-lock.json')
+  assert.equal(pkg.name, 'wikicambada-core')
+  assert.equal(lock.name, pkg.name)
+  assert.equal(lock.packages[''].name, pkg.name)
+  assert.deepEqual(project.config(), genericConfig())
+  assert.equal(project.installation().databaseSchema, null)
+  const wrangler = vendor.toml.parse(fs.readFileSync(project.file('wrangler.toml'), 'utf8'))
+  for (const key of ['ACCESS_TEAM_DOMAIN', 'ACCESS_AUD', 'PUBLIC_BASE_URL', 'WIKI_SUPER_ADMIN_EMAIL']) assert.equal(wrangler.vars[key], '')
+  assert.equal(wrangler.d1_databases[0].database_id, '')
+  assert.equal(wrangler.d1_databases[0].preview_database_id, '')
+  assert.equal(fs.existsSync(project.file('.wikicambada/state.json')), false)
   assert.equal(hash(project.file('src/media/images/protectedby-cloudflare.png')), '3d7b109fb7cd683025818d8c6d5224c565b0b2278099e666c15f7d2d8325067e')
   assert.equal(hash(project.file('src/media/images/built-with-cloudflare.svg')), 'd2163cf80414fef294990af0543ae2dc0c4e24bfd7706f28a5e803d548178e93')
   assert.equal(project.config().features.builtWithCloudflareBadge, false)

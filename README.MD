@@ -151,7 +151,7 @@ Os principais arquivos de instalação são:
 /.wikicambada/state.json
 ```
 
-`site.json` define a wiki. `installation.json` registra a versão e o schema exigido pela distribuição; salvar a configuração ou atualizar os arquivos não comprova que as migrations foram aplicadas. `.wikicambada/` guarda estado local e backups do setup.
+`site.json` define a wiki. O checkout e o ZIP começam com a mesma configuração genérica, sem IDs do D1, credenciais do Access ou identidade de uma instalação. `installation.json` registra a versão e o schema exigido pela distribuição. O schema aplicado fica desconhecido até ser verificado no banco. A pasta `.wikicambada/` guarda estado local, arquivos de build e backups e fica fora do Git.
 
 ## Requisitos
 
@@ -180,7 +180,7 @@ Novas instalações recebem uma página principal e um guia inicial no idioma se
 Depois da configuração:
 
 ```bash
-npm install
+npm ci
 npm run db:migrations:apply:remote
 npm run deploy
 ```
@@ -412,6 +412,8 @@ Operações de escrita das APIs exigem `X-Wiki-Request: 1`; origens diferentes e
 O Pages publica exclusivamente `.wikicambada/public`, preparado por `npm run build`. Os scripts de desenvolvimento e publicação executam esse preparo. O builder copia uma lista explícita de HTML, JS, CSS e dados públicos, além dos formatos de mídia/fontes permitidos. `.dev.vars`, estado, backups, instalador, migrations, ZIPs e configurações privadas ficam fora dos assets. Pages Functions continuam em `/functions/`.
 
 ## Desenvolvimento
+
+Em um clone novo, `node setup.js verify` confere os arquivos do Core e a estrutura local da configuração. Para instalar as dependências do lockfile, execute `npm ci`. Use uma cópia separada para testar a configuração de uma wiki, pois o setup grava `site.json`, `installation.json` e `wrangler.toml` na pasta em que está instalado.
 
 Servidor local do Pages:
 

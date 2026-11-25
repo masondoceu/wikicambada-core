@@ -20,14 +20,14 @@ export async function buildPackage(destination, project = new Project()) {
         fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(source, target)
       }
     }
-    const files = ['index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked/index.html', 'access-denied/index.html', 'login-error/index.html', 'non-identity-blocked/index.html', 'setup.js', 'setup.cmd', 'setup.sh', 'setup.command', 'package.json', 'package-lock.json', 'tsconfig.json', 'README.MD', 'CHANGELOG.MD', 'wikicambada-release.json', '.gitignore', '.dev.vars.example', 'LICENSE', 'src/media/images/core/cat-guard.png', 'src/media/images/core/wikicambada-core-white.png', 'src/media/images/core/wikicambada-core-readme.png', 'src/media/images/poweredby-wikicambada-core.png', 'src/media/images/protectedby-cloudflare.png', 'src/media/images/built-with-cloudflare.svg']
+    const files = ['index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked/index.html', 'access-denied/index.html', 'login-error/index.html', 'non-identity-blocked/index.html', 'setup.js', 'setup.cmd', 'setup.sh', 'setup.command', 'package.json', 'package-lock.json', 'tsconfig.json', 'README.MD', 'CHANGELOG.MD', 'wikicambada-release.json', '.gitattributes', '.gitignore', '.dev.vars.example', 'LICENSE', 'src/media/images/core/cat-guard.png', 'src/media/images/core/wikicambada-core-white.png', 'src/media/images/core/wikicambada-core-readme.png', 'src/media/images/poweredby-wikicambada-core.png', 'src/media/images/protectedby-cloudflare.png', 'src/media/images/built-with-cloudflare.svg']
     for (const name of files) { const target = path.join(temporary, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(project.file(name), target) }
     for (const name of ['setup.sh', 'setup.command']) fs.chmodSync(path.join(temporary, name), 0o755)
     const stage = new Project(temporary), config = genericConfig()
     stage.write('src/data/wiki-icons.json', { icons: [], fallback: '/src/media/images/core/cat-guard.png' })
     stage.write('src/config/site.json', config)
     stage.write('src/config/installation.json', { formatVersion: 1, coreVersion: project.release().version, configSchema: 1, databaseSchema: null, requiredDatabaseSchema: 17, distribution: 'custom' })
-    stage.generateWrangler(config, false); stage.generatePackage(config)
+    stage.generateWrangler(config, false); stage.generatePackage(config, 'wikicambada-core')
     const release = stage.release(); release.databaseSchema = 17; release.migrations = fs.readdirSync(stage.file('src/data/migrations')).filter(name => name.endsWith('.sql')).sort().map(name => 'src/data/migrations/' + name)
     delete release.requirements.python; release.requirements.node = '>=22.13.0'
     stage.write('wikicambada-release.json', release)
