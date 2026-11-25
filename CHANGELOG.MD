@@ -87,7 +87,7 @@ Esta versão inicia a transformação do WikiCambada Core em um motor de wiki im
 - torna nome, slogan, página inicial, branding, fontes, navegação, recursos, Cloudflare e super administrador configuráveis
 - usa `WIKI_SITE_NAME` e `WIKI_SUPER_ADMIN_EMAIL` no backend
 - atualiza a versão para `v1.1.0 Beta`
-- reorganiza a documentação do projeto em `README.MD` e `CHANGELOG.MD`
+- reorganiza a documentação do projeto em `README.md` e `CHANGELOG.MD`
 
 ---
 

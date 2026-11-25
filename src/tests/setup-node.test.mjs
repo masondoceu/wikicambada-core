@@ -86,6 +86,33 @@ test('modificação local e hash confiável inválido são recusados antes do ba
   await assert.rejects(updateFromBase64(project, encoded), /alterações locais/)
   assert.equal(fs.existsSync(project.file('.wikicambada/backups')), false)
 })
+test('atualizador renomeia o README gerenciado e restaura sua grafia em caso de falha', async () => {
+  const project = await fixture()
+  const manifest = project.read('wikicambada-files.json')
+  const oldName = 'README.MD'
+  fs.renameSync(project.file('README.md'), project.file('README.tmp'))
+  fs.renameSync(project.file('README.tmp'), project.file(oldName))
+  manifest.files[oldName] = manifest.files['README.md']
+  delete manifest.files['README.md']
+  delete manifest.files['readmes/README.pt-BR.md']
+  fs.unlinkSync(project.file('readmes/README.pt-BR.md'))
+  project.write('wikicambada-files.json', manifest)
+
+  const verify = project.verify
+  project.verify = () => ({ ok: false })
+  await assert.rejects(updateFromBase64(project, encoded), /pós-atualização/)
+  assert.ok(fs.readdirSync(project.root).includes(oldName))
+  assert.equal(hash(project.file(oldName)), manifest.files[oldName])
+
+  project.verify = verify
+  const result = await updateFromBase64(project, encoded, 'core.zip', hash(archive))
+  assert.ok(result.verification.ok)
+  assert.ok(fs.readdirSync(project.root).includes('README.md'))
+  assert.ok(!fs.readdirSync(project.root).includes(oldName))
+  assert.ok(fs.existsSync(path.join(result.backup, oldName)))
+  const files = project.read('wikicambada-files.json').files
+  for (const name of ['README.md', 'readmes/README.pt-BR.md']) assert.equal(hash(project.file(name)), files[name])
+})
 test('falha posterior à cópia aciona rollback e preserva estado local', async () => {
   const project = await fixture(), before = fs.readFileSync(project.file('src/scripts/app.js'))
   project.write('.wikicambada/state.json', { fixture: true })

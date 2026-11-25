@@ -10,7 +10,7 @@ import { loadFunction } from './helpers.mjs'
 test('publicação contém somente assets e configuração pública', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wiki-public-'))
   try {
-    for (const path of ['src', 'index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked', 'access-denied', 'login-error', 'non-identity-blocked', 'wikicambada-release.json']) await cp(path, join(root, path), { recursive: true })
+    for (const path of ['src', 'index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked', 'access-denied', 'login-error', 'non-identity-blocked', 'wikicambada-release.json', 'README.md', 'readmes/README.pt-BR.md']) await cp(path, join(root, path), { recursive: true })
     await mkdir(join(root, '.wikicambada/backups'), { recursive: true })
     await writeFile(join(root, '.dev.vars'), 'secret')
     await writeFile(join(root, '.wikicambada/state.json'), 'secret')
@@ -27,6 +27,7 @@ test('publicação contém somente assets e configuração pública', async () =
     await writeFile(join(root, 'src/data/wiki-icons.json'), JSON.stringify({ icons: ['/src/media/images/core/cat-guard.png'], fallback: '/src/media/images/core/cat-guard.png', privateToken: 'secret-token' }))
     const output = await buildPublic(root)
     const files = await readdir(output, { recursive: true })
+    assert.ok(!files.some(name => /(?:^|[\\/])readmes?(?:\.|$)/i.test(name)))
     for (const name of files) assert.ok(!/\.py$|\.zip$|\.dev.vars|state\.json|installation\.json|local\.json|setup|tests|migrations/.test(name), name)
     const config = JSON.parse(await readFile(join(output, 'src/config/site.json'), 'utf8'))
     assert.equal(config.features.cloudflareBadge, false)

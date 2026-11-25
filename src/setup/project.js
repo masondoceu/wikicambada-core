@@ -181,7 +181,9 @@ export class Project {
       add('bindings da Cloudflare', databases.length === 1 && buckets.length === 1 && db.database_name && buckets[0].bucket_name && db.migrations_dir === 'src/data/migrations' && (!db.database_id || /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(db.database_id)) && object(wrangler.vars) && wrangler.pages_build_output_dir === '.wikicambada/public', 'estrutura local; conectividade e schema remoto não verificados')
     } catch { add('wrangler.toml:toml', false) }
     const manifest = this.read('wikicambada-files.json'), protectedAssets = installationAssets(this), errors = []
-    for (const [name, expected] of Object.entries(manifest.files || manifest)) { try { safePath(name); if (!isPreserved(name) && !protectedAssets.has(name) && (!fs.existsSync(this.file(name)) || hash(this.file(name)) !== expected)) errors.push(name) } catch { errors.push(name) } }
+    const files = manifest.files || manifest
+    for (const name of ['README.md', 'readmes/README.pt-BR.md']) add(name, Object.hasOwn(files, name) && fs.existsSync(this.file(name)))
+    for (const [name, expected] of Object.entries(files)) { try { safePath(name); if (!isPreserved(name) && !protectedAssets.has(name) && (!fs.existsSync(this.file(name)) || hash(this.file(name)) !== expected)) errors.push(name) } catch { errors.push(name) } }
     add('integridade dos arquivos do Core', Object.keys(manifest.files || manifest).length > 0 && errors.length === 0, errors.length ? errors.slice(0, 10).join(', ') : 'hashes válidos')
     for (const key of ['logo', 'logoMobile', 'favicon']) { const value = this.config().branding?.[key]; if (value?.startsWith('/') && !value.startsWith('//')) add('branding.' + key, fs.existsSync(this.file(value.slice(1))), value) }
     return { ok: checks.every(item => item.ok), checks }

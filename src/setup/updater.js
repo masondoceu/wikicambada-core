@@ -85,6 +85,9 @@ export function validateRelease(project, source, release = readJson(path.join(so
   if (Object.keys(actual).some(name => name.split('/').some(part => IGNORE.has(part) || part === '.wikicambada'))) throw new Error('o pacote contém arquivos fora da distribuição')
   delete actual[manifestName]
   if (!Object.keys(files).length || Object.keys(actual).length !== Object.keys(files).length || Object.entries(files).some(([name, digest]) => { safePath(name); return actual[name] !== digest })) throw new Error('o pacote falhou na verificação de integridade: arquivos ausentes, não registrados ou hashes diferentes')
+  const bilingual = Object.hasOwn(files, 'README.md') && Object.hasOwn(files, 'readmes/README.pt-BR.md')
+  const previousReadme = Object.hasOwn(files, 'README.MD') && !Object.hasOwn(files, 'readmes/README.pt-BR.md')
+  if (!bilingual && !previousReadme) throw new Error('a documentação do Core está incompleta')
   const pkg = readJson(path.join(source, 'package.json')), lock = readJson(path.join(source, 'package-lock.json')), locked = lock.packages?.[''] || {}
   if ([pkg, lock, locked].some(record => record.version !== release.version)) throw new Error('versões divergentes entre a release, o pacote e o lockfile')
   if ([lock, locked].some(record => record.name !== pkg.name) || !isDeepStrictEqual(locked.devDependencies || {}, pkg.devDependencies || {}) || !isDeepStrictEqual(locked.engines || {}, pkg.engines || {})) throw new Error('o lockfile não corresponde ao pacote')
@@ -124,13 +127,17 @@ export async function updateFromBase64(project, data, filename = 'update.zip', e
       const children = fs.readdirSync(extracted).filter(name => !IGNORE.has(name)); let source = extracted
       if (children.length === 1 && fs.statSync(path.join(extracted, children[0])).isDirectory() && fs.existsSync(path.join(extracted, children[0], 'index.html'))) source = path.join(extracted, children[0])
       const release = validateRelease(project, source), previousManifest = project.read('wikicambada-files.json'), previousFiles = previousManifest.files || previousManifest, protectedAssets = installationAssets(project), localPackage = project.read('package.json'), config = project.config()
+      const rootNames = fs.readdirSync(project.root)
+      const renameReadme = Object.hasOwn(previousFiles, 'README.MD') && !protectedAssets.has('README.MD') && rootNames.includes('README.MD') && !rootNames.includes('README.md') && fs.readdirSync(source).includes('README.md')
       for (const file of walk(source)) {
         const relative = path.relative(source, file).replaceAll(path.sep, '/')
+        if (relative === 'README.md' && renameReadme) continue
         if (fs.existsSync(project.file(relative)) && !isPreserved(relative) && !protectedAssets.has(relative) && !Object.hasOwn(previousFiles, relative) && !['wikicambada-files.json', 'wikicambada-release.json'].includes(relative)) throw new Error('arquivo da instalação em conflito com o pacote: ' + relative)
       }
       const backup = backupProject(project), stateFile = project.file('.wikicambada/state.json'), state = fs.existsSync(stateFile) ? fs.readFileSync(stateFile).toString('base64') : null
       project.write('.wikicambada/update-journal.json', { backup: path.relative(project.root, backup).replaceAll(path.sep, '/'), state })
       try {
+        if (renameReadme) fs.unlinkSync(project.file('README.MD'))
         for (const file of walk(source)) {
           const relative = path.relative(source, file).replaceAll(path.sep, '/')
           if (isPreserved(relative) || protectedAssets.has(relative)) continue

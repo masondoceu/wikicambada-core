@@ -2,148 +2,153 @@
   <img src="src/media/images/core/wikicambada-core-readme.png" alt="WikiCambada Core" width="960" />
 </p>
 
+<p align="center">
+  <strong>English</strong> | <a href="readmes/README.pt-BR.md">Português (Brasil)</a>
+</p>
+
 # WikiCambada Core
 
-**WikiCambada Core** é um motor de wiki serverless feito para o ecossistema Cloudflare. Ele combina uma aplicação web estática com Pages Functions, D1, R2 e Cloudflare Access para oferecer artigos em Markdown, revisões, administração, mídia, busca, categorias, templates e colaboração sem manter um servidor tradicional.
+**WikiCambada Core** is a serverless wiki engine designed for the Cloudflare ecosystem. It combines a static web application with Pages Functions, D1, R2 and Cloudflare Access to provide Markdown articles, revisions, administration, media, search, categories, templates and collaboration without maintaining a traditional server.
 
-A partir da versão **v1.1.0-r2**, o Core não assume que toda instalação é a WikiCambada. Nome, identidade visual, fontes, navegação, recursos, acesso e bindings podem ser configurados pelo setup local. A WikiCambada é uma instalação do mesmo Core, enquanto outras wikis — como documentação de software — podem ter aparência e comportamento independentes.
+As of **v1.1.0-r2**, the Core no longer assumes that every installation is WikiCambada. The local setup lets operators configure the name, visual identity, fonts, navigation, features, access and bindings. WikiCambada is one installation of the same Core; other wikis, such as software documentation sites, can have their own appearance and behavior.
 
-## Índice
+## Contents
 
-- [Para que serve](#para-que-serve)
-- [Como funciona](#como-funciona)
-- [O que ele é](#o-que-ele-é)
-- [O que ele não é](#o-que-ele-não-é)
-- [Recursos](#recursos)
-- [Arquitetura](#arquitetura)
-- [Requisitos](#requisitos)
-- [Implementação rápida](#implementação-rápida)
-- [Setup gráfico](#setup-gráfico)
-- [Configuração e presets](#configuração-e-presets)
+- [Use cases](#use-cases)
+- [How it works](#how-it-works)
+- [What it is](#what-it-is)
+- [What it is not](#what-it-is-not)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Graphical setup](#graphical-setup)
+- [Configuration and presets](#configuration-and-presets)
 - [Cloudflare](#cloudflare)
-- [Atualizações](#atualizações)
-- [Recuperação](#recuperação)
-- [Configurações globais](#configurações-globais)
-- [Páginas especiais](#páginas-especiais)
-- [Estrutura do projeto](#estrutura-do-projeto)
-- [Segurança](#segurança)
-- [Desenvolvimento](#desenvolvimento)
-- [Créditos](#créditos)
-- [Licença e direitos autorais](#licença-e-direitos-autorais)
+- [Updates](#updates)
+- [Migrating from 1.0.13](#migrating-from-1013)
+- [Recovery](#recovery)
+- [Global settings](#global-settings)
+- [Special pages](#special-pages)
+- [Project structure](#project-structure)
+- [Security](#security)
+- [Development](#development)
+- [Credits](#credits)
+- [License and copyright](#license-and-copyright)
 
-## Para que serve
+## Use cases
 
-O WikiCambada Core pode ser usado como base para:
+WikiCambada Core can be used as a foundation for:
 
-- wikis comunitárias
-- documentação de software e APIs
-- enciclopédias independentes
-- bases de conhecimento privadas
-- documentação interna protegida por Cloudflare Access
-- projetos editoriais com histórico, revisão e mídia
+- community wikis
+- software and API documentation
+- independent encyclopedias
+- private knowledge bases
+- internal documentation protected by Cloudflare Access
+- editorial projects with revision history, review and media
 
-Cada instalação mantém seus próprios dados, configuração, identidade visual, D1 e R2.
+Each installation maintains its own data, configuration, visual identity, D1 database and R2 bucket.
 
-## Como funciona
+## How it works
 
-O frontend é servido pelo Cloudflare Pages. Rotas dinâmicas e APIs são executadas por Pages Functions. O conteúdo editorial fica no D1, enquanto imagens, vídeos e áudios ficam no R2. O Cloudflare Access autentica editores, moderadores e administradores; o Core mantém os cargos internos e as permissões editoriais.
+The frontend is served by Cloudflare Pages. Dynamic routes and APIs run on Pages Functions. Editorial content is stored in D1, while images, videos and audio are stored in R2. Cloudflare Access authenticates editors, moderators and administrators; the Core manages internal roles and editorial permissions.
 
 ```text
-navegador
+browser
    │
-   ├── Cloudflare Pages ── frontend, estilos e configuração pública
+   ├── Cloudflare Pages ── frontend, styles and public configuration
    │
-   ├── Pages Functions ── APIs, rotas, validações e administração
-   │       ├── D1 ── páginas, revisões, usuários, propostas e metadados
-   │       └── R2 ── imagens, vídeos e áudios
+   ├── Pages Functions ── APIs, routes, validation and administration
+   │       ├── D1 ── pages, revisions, users, proposals and metadata
+   │       └── R2 ── images, videos and audio
    │
-   └── Cloudflare Access ── autenticação de editores
+   └── Cloudflare Access ── editor authentication
 ```
 
-## O que ele é
+## What it is
 
-- um motor de wiki orientado a Cloudflare
-- uma aplicação serverless sem servidor persistente próprio
-- um editor Markdown com recursos de wiki
-- uma base implementável e configurável
-- um projeto que pode ser atualizado sem sobrescrever a identidade da instalação
-- software livre distribuído sob GNU AGPL v3
+- a wiki engine designed for Cloudflare
+- a serverless application without its own persistent server
+- a Markdown editor with wiki features
+- a deployable and configurable foundation
+- a project that can be updated without overwriting an installation's identity
+- free software distributed under the GNU AGPL v3
 
-## O que ele não é
+## What it is not
 
-- não é um fork do MediaWiki
-- não usa PHP nem depende de um servidor LAMP
-- não pretende reproduzir toda a compatibilidade de extensões, skins e wikitext do MediaWiki
-- não é um CMS genérico para qualquer tipo de site
-- não transforma o D1 em armazenamento de arquivos grandes
-- não substitui automaticamente políticas, backups e controles da conta Cloudflare
+- a fork of MediaWiki
+- a PHP application or a project that requires a LAMP server
+- an attempt to reproduce full compatibility with MediaWiki extensions, skins and wikitext
+- a general-purpose CMS for every type of website
+- a way to turn D1 into large-file storage
+- an automatic replacement for Cloudflare account policies, backups and controls
 
-## Recursos
+## Features
 
-### Conteúdo e edição
+### Content and editing
 
-- artigos em Markdown
-- revisões com resumo obrigatório
-- histórico e comparação de versões
-- restauração de revisões
-- detecção de conflito de edição
-- rascunhos locais no navegador
-- aliases e redirecionamentos com fragmentos de seção
-- páginas de discussão e páginas de usuário
-- propostas públicas de edição
+- Markdown articles
+- revisions with mandatory edit summaries
+- revision history and comparison
+- revision restoration
+- edit conflict detection
+- local browser drafts
+- aliases and redirects with section fragments
+- talk pages and user pages
+- public edit proposals
 
-### Organização
+### Organization
 
-- categorias
-- busca com ranking e autocomplete
-- links internos estilo wiki
-- índice manual com `__TOC__`
+- categories
+- ranked search and autocomplete
+- wiki-style internal links
+- manual table of contents with `__TOC__`
 - breadcrumbs
-- páginas recentes, todas as páginas e página aleatória
-- namespace `Especial` para recursos gerados pelo Core
+- recent pages, all pages and a random page
+- `Especial` namespace for Core-generated features
 
-### Markdown e mídia
+### Markdown and media
 
 - infoboxes
-- templates editoriais configuráveis
-- caixas de aviso e componentes `:::`
-- tabelas, listas, citações e blocos de código
-- upload de imagens, vídeos e áudios
-- armazenamento no R2
-- páginas de arquivo
-- galeria e visualizador de mídia
+- configurable editorial templates
+- notice boxes and `:::` components
+- tables, lists, blockquotes and code blocks
+- image, video and audio uploads
+- R2 storage
+- file pages
+- media gallery and viewer
 
-### Administração
+### Administration
 
-- cargos `editor`, `moderator`, `admin` e `super_admin`
-- painel administrativo separado por seções
-- bloqueio, renomeação e exclusão suave de páginas
-- lixeira com restauração e remoção definitiva
-- gerenciamento de mídia e armazenamento
-- regras de IP e CIDR
-- atividade recente
-- exportação de conteúdo e importação de seed JSON
-- backup integral de D1/R2 e restauração retomável
-- gerenciamento de templates
-- configurações globais de recursos
+- `editor`, `moderator`, `admin` and `super_admin` roles
+- administration panel organized into sections
+- page locking, renaming and soft deletion
+- trash with restoration and permanent deletion
+- media and storage management
+- IP and CIDR rules
+- recent activity
+- content export and JSON seed import
+- full D1/R2 backup and resumable restoration
+- template management
+- global feature settings
 
-### Aparência
+### Appearance
 
-- tema automático, branco, preto e OLED
-- tamanho de texto
-- renderização de fonte MacType ou clássica
-- nome, slogan, logos, favicon, cores e fontes por instalação
-- navegação e links externos configuráveis
+- automatic, white, black and OLED themes
+- text size
+- MacType or classic font rendering
+- per-installation name, tagline, logos, favicon, colors and fonts
+- configurable navigation and external links
 
-## Arquitetura
+## Architecture
 
-O Core separa três tipos de estado:
+The Core separates three kinds of state:
 
-1. **Código do Core**: funções, renderizadores, rotas, estilos e migrations
-2. **Configuração da instalação**: identidade, branding, recursos, navegação, acesso e Cloudflare
-3. **Dados da wiki**: páginas, revisões, usuários, propostas, templates e mídia
+1. **Core code**: functions, renderers, routes, styles and migrations
+2. **Installation configuration**: identity, branding, features, navigation, access and Cloudflare
+3. **Wiki data**: pages, revisions, users, proposals, templates and media
 
-Os principais arquivos de instalação são:
+The main installation files are:
 
 ```text
 /src/config/site.json
@@ -151,33 +156,53 @@ Os principais arquivos de instalação são:
 /.wikicambada/state.json
 ```
 
-`site.json` define a wiki. O checkout e o ZIP começam com a mesma configuração genérica, sem IDs do D1, credenciais do Access ou identidade de uma instalação. `installation.json` registra a versão e o schema exigido pela distribuição. O schema aplicado fica desconhecido até ser verificado no banco. A pasta `.wikicambada/` guarda estado local, arquivos de build e backups e fica fora do Git.
+`site.json` defines the wiki. The checkout and the ZIP start with the same generic configuration, without D1 IDs, Access credentials or an installation-specific identity. `installation.json` records the version and required schema of the distribution. The applied schema remains unknown until verified against the database. The `.wikicambada/` directory stores local state, build files and backups and is excluded from Git.
 
-## Requisitos
+## Requirements
 
-- Node.js 22.13 ou superior
-- Wrangler 4 ou superior
-- conta Cloudflare
+### Local system requirements
+
+These requirements apply to local installation, configuration, updates, development, builds and deployment, not to visitors of a published wiki.
+
+| Component | Minimum | Recommended |
+| --- | --- | --- |
+| Windows | Windows 11 (Windows NT 10.0.22000) | Windows 11 25H2 (Windows NT 10.0.26200) or later |
+| macOS | macOS 13.5 (Darwin 22.6.0) | macOS 13.5 or later |
+| Linux | Distribution with glibc 2.35 or later | Distribution with glibc 2.35 or later |
+| Processor | 64-bit x86-64 or ARM64, single-core, 1 GHz or faster; SSE4.2 and CLMUL (x86-64) or CRC (ARM64) | 64-bit x86-64 or ARM64, dual-core, 1 GHz or faster; SSE4.2 and CLMUL (x86-64) or CRC (ARM64) |
+| Available RAM | 512 MB | 2 GB |
+| Available storage | 1 GB | 4 GB |
+| Display resolution | 1024 × 768 | 1280 × 720 |
+| Node.js | v22.13.0 or later | v24 LTS or a later compatible LTS release |
+| Cloudflare Wrangler | v4 | Version supplied by the Core's lockfile |
+
+The operating system and CPU instruction requirements follow [Wrangler](https://developers.cloudflare.com/workers/wrangler/install-and-update/) and [workerd](https://github.com/cloudflare/workerd#supported-platforms). Use an operating system that still receives security updates; the Windows 11 21H2 minimum is a compatibility baseline, not a recommendation to use an unsupported release. Use a supported [Node.js release](https://nodejs.org/en/about/previous-releases/).
+
+Hardware figures are estimates, not tested minimums. Larger wikis, local backups, builds and dependency installation may require additional memory or storage. Display requirements apply only to the graphical setup. Internet access is required for online operations.
+
+### Cloudflare requirements
+
+- Cloudflare account
 - Cloudflare Pages
-- banco D1
-- bucket R2 para mídia
-- Cloudflare Access para edição autenticada
+- D1 database
+- R2 bucket for media
+- Cloudflare Access for authenticated editing
 
-## Implementação rápida
+## Quick start
 
-Extraia o pacote, entre na pasta raiz e execute:
+Download the distribution ZIP from [Releases](https://github.com/masondoceu/wikicambada-core/releases), extract it into a new directory, enter the project root and run:
 
 ```bash
 node setup.js
 ```
 
-No Windows, abra `setup.cmd` por duplo clique. Em Linux/Unix, execute `./setup.sh`; no macOS, abra `setup.command`. Os lançadores usam o mesmo `setup.js`, independentemente do diretório atual. O setup já inclui suas bibliotecas e não exige `npm install` para abrir.
+On Windows, double-click `setup.cmd`. On Linux/Unix, run `./setup.sh`; on macOS, open `setup.command`. The launchers use the same `setup.js` regardless of the current working directory. The setup bundles its own libraries and does not require `npm install` to open.
 
-O setup abre uma interface local em `127.0.0.1`. O botão **Fechar** encerra o servidor; fechar a última aba também o encerra após 25 segundos, aguardando operações críticas. Se o navegador não abrir, acesse a URL mostrada no terminal. Use `node setup.js --no-browser` para abertura manual. Ele não publica uma rota de instalação na wiki.
+The setup opens a local interface on `127.0.0.1`. The **Close** button shuts down the server; closing the last tab also shuts it down after 25 seconds, allowing critical operations to finish. If the browser does not open, visit the URL displayed in the terminal. Use `node setup.js --no-browser` to open it manually. The setup does not expose an installation route on the published wiki.
 
-Novas instalações recebem uma página principal e um guia inicial no idioma selecionado, gravados como páginas e revisões normais na primeira requisição após aplicar as migrations. O seed é idempotente, não sobrescreve wikis com páginas e não recria conteúdo removido. Reconfigurar uma instalação existente não ativa o seed.
+New installations receive a main page and an introductory guide in the selected language, created as ordinary pages and revisions on the first request after migrations have been applied. The seed is idempotent: it does not overwrite wikis containing pages or recreate deleted content. Reconfiguring an existing installation does not activate the seed.
 
-Depois da configuração:
+After configuration:
 
 ```bash
 npm ci
@@ -185,50 +210,50 @@ npm run db:migrations:apply:remote
 npm run deploy
 ```
 
-Antes do primeiro deploy, configure no `wrangler.toml`:
+Before the first deployment, configure the following in `wrangler.toml`:
 
 - `ACCESS_TEAM_DOMAIN`
 - `ACCESS_AUD`
 - `database_id`
 - `preview_database_id`
 
-Secrets, como webhook do Discord, devem ser configurados pelo Wrangler ou pelo painel da Cloudflare e não gravados em `site.json`.
+Secrets, such as a Discord webhook, must be configured through Wrangler or the Cloudflare dashboard, not stored in `site.json`.
 
-## Setup gráfico
+## Graphical setup
 
-O setup possui cinco modos principais:
+The setup has five main modes:
 
-- **Criar uma nova wiki**, partindo de uma configuração genérica
-- **Reconfigurar esta wiki**, preservando a instalação existente
-- **Atualizar o WikiCambada Core** por pacote ZIP
-- **Verificar a instalação**
-- **Migrar uma wiki legada** para uma pasta nova
+- **Create a new wiki**, starting from a generic configuration
+- **Reconfigure this wiki**, preserving the existing installation
+- **Update WikiCambada Core** using a ZIP package
+- **Verify the installation**
+- **Migrate a legacy wiki** to a new directory
 
-A interface do setup suporta:
+The setup interface supports:
 
 - `pt-BR — Português (Brasil)`
 - `en — English`
 
-O idioma do instalador e o idioma da wiki são escolhas independentes. O setup, a navegação principal, as páginas estáticas de erro e as páginas públicas geradas pelo Core possuem textos em português brasileiro e inglês. O conteúdo editorial continua sendo definido por cada instalação.
+The setup language and wiki language are independent choices. The setup, main navigation, static error pages and Core-generated public pages have Brazilian Portuguese and English text. Editorial content is still defined by each installation.
 
-## Configuração e presets
+## Configuration and presets
 
-Os presets são pontos de partida, não distribuições diferentes do código:
+Presets are starting points, not separate code distributions:
 
-- documentação de software
-- wiki comunitária
-- enciclopédia
-- base de conhecimento privada
-- instalação mínima
-- personalizada
+- software documentation
+- community wiki
+- encyclopedia
+- private knowledge base
+- minimal installation
+- custom
 
-O preset aplica recursos iniciais. Depois, o administrador pode ajustar opções globais sem reinstalar o Core. O setup também edita os links das áreas principal, comunidade e externa usando linhas no formato `Nome | URL`.
+A preset applies initial features. Administrators can then adjust global options without reinstalling the Core. The setup also edits links in the main, community and external navigation areas using lines in the `Name | URL` format.
 
 ## Cloudflare
 
-O arquivo `wrangler.toml` contém bindings e variáveis públicas da instalação. O setup preserva IDs existentes quando reconfigura o projeto.
+The `wrangler.toml` file contains the installation's bindings and public variables. The setup preserves existing IDs when reconfiguring a project.
 
-Bindings esperados:
+Expected bindings:
 
 ```toml
 [[d1_databases]]
@@ -238,126 +263,132 @@ binding = "DB"
 binding = "WIKI_BUCKET"
 ```
 
-Variáveis relevantes:
+Relevant variables:
 
 ```toml
-WIKI_SITE_NAME = "Minha Wiki"
+WIKI_SITE_NAME = "My Wiki"
 WIKI_SUPER_ADMIN_EMAIL = "admin@example.com"
 WIKI_CORE_VERSION = "v1.1.0-r2"
 PUBLIC_BASE_URL = "https://wiki.example.com"
 ```
 
-## Atualizações
+## Updates
 
-A experiência de atualização fica no próprio setup, mas usa um módulo separado. Isso permite reutilizar o mesmo motor no modo gráfico, em linha de comando e futuramente em automações.
+Updates are managed through the setup, but use a separate module. This allows the same engine to be reused in graphical mode, on the command line and in future automation.
 
-Na v1.1.0-r2, o setup aceita pacote ZIP local e:
+In v1.1.0-r2, the setup accepts a local distribution ZIP and:
 
-1. valida a estrutura e os hashes do manifesto da release
-2. detecta arquivos do Core modificados localmente
-3. cria backup em `.wikicambada/backups/`
-4. aplica os arquivos do Core
-5. preserva configuração, branding, fontes, assets locais referenciados, `.dev.vars` e `wrangler.toml`
-6. preserva os comandos específicos da instalação no `package.json`
-7. registra o schema exigido pela distribuição e verifica o projeto
-8. restaura o backup automaticamente se a atualização local falhar
+1. validates the release manifest structure and hashes
+2. detects locally modified Core files
+3. creates a backup in `.wikicambada/backups/`
+4. applies Core files
+5. preserves configuration, branding, fonts, referenced local assets, `.dev.vars` and `wrangler.toml`
+6. preserves installation-specific commands in `package.json`
+7. records the schema required by the distribution and verifies the project
+8. automatically restores the backup if the local update fails
 
-O pacote é rejeitado quando contém caminhos inseguros, arquivos não registrados no manifesto, hashes divergentes, tipos especiais, conteúdo extraído acima do limite ou uma versão-base anterior à instalação atual.
+The package is rejected if it contains unsafe paths, files not registered in the manifest, mismatched hashes, special file types, extracted content exceeding the limit or a base version older than the current installation.
 
-Migrations do D1 continuam sendo uma etapa explícita. Rollback de arquivos não implica rollback automático do banco.
+D1 migrations remain an explicit step. Rolling back files does not automatically roll back the database.
 
-Arquivos personalizados referenciados pela instalação são preservados mesmo quando o ZIP contém o mesmo caminho. Arquivos adicionais da instalação não são removidos. Conflitos com arquivos do Core são detectados antes da aplicação. `1.1.0-r1`, `1.1.0-r2`, betas e versões estáveis possuem ordenação própria; downgrades são recusados.
+Custom files referenced by the installation are preserved even when the ZIP contains the same path. Additional installation files are not removed. Conflicts with Core files are detected before application. `1.1.0-r1`, `1.1.0-r2`, beta and stable versions have their own ordering; downgrades are rejected.
 
-As operações locais usam exclusão mútua e um registro de recuperação. Depois de uma interrupção, execute `node setup.js recover-local` antes de configurar ou atualizar novamente. A recuperação guarda o estado atual antes de restaurar o backup anterior.
+Local operations use mutual exclusion and a recovery journal. After an interruption, run `node setup.js recover-local` before configuring or updating again. Recovery saves the current state before restoring the previous backup.
 
-Para gerar uma distribuição genérica, use `node setup.js package --output wikicambada-core-1.1.0-r2.zip`. O destino deve ser novo. O pacote inclui apenas o Core, configurações genéricas, migrations, testes e licença; não inclui os bindings, branding ou estado local da wiki. A verificação usa o mesmo mecanismo do atualizador. Os lançadores Unix recebem permissão de execução no ZIP. As bibliotecas TOML e ZIP estão incluídas em `src/setup/vendor.cjs`; ao alterá-las, regenere o bundle com `node src/scripts/build-setup-vendor.mjs`.
+If the Windows setup reports a conflict with `README.md` when updating from an older package, extract the new ZIP to a separate folder. Run this command from that folder, using the installed wiki's path, the original ZIP path and its SHA-256 from a trusted source:
 
-Os hashes do manifesto verificam integridade, mas não autenticam o autor. A API local de atualização aceita `expectedSha256` para conferir um hash do ZIP obtido por um canal confiável. O projeto ainda não define uma infraestrutura de assinatura de releases.
-
-O atualizador exige uma distribuição com manifestos. Use **Migrar uma wiki legada** quando a origem for uma instalação `1.0.13` anterior aos manifestos.
-
-## Migração da 1.0.13
-
-No setup, indique uma pasta de origem ou selecione um ZIP da instalação. Use como destino uma pasta nova cujo diretório pai já exista. Em linha de comando:
-
-```bash
-node setup.js migrate-legacy --source /caminho/origem --output /caminho/wiki-migrada
+```sh
+node --input-type=module -e "import { readFileSync } from 'node:fs'; import { Project } from './src/setup/project.js'; import { updateFromBase64 } from './src/setup/updater.js'; const [wiki, zip, sha] = process.argv.slice(1); await updateFromBase64(new Project(wiki), readFileSync(zip, 'base64'), zip, sha)" -- "path/to/installed-wiki" "path/to/core.zip" "SHA-256"
 ```
 
-A migração identifica a versão pelo pacote, pelo frontend, pelo Wrangler e pelo inventário das 14 migrations. A variante legada da migration 0009 é aceita pelo hash conhecido. A diferença é o texto inicial de um template, que permanece no banco existente. O Core usa os próprios scripts e lockfile, converte a identidade e a navegação e mantém as referências a D1, R2 e Access. O código legado e as configurações originais ficam em `.wikicambada/backups/legacy-1.0.13`. Revise os arquivos apontados pelo setup, incluindo código modificado e arquivos guardados apenas no backup. Configurações Wrangler com ambientes ou build próprio exigem revisão antes da migração.
+To generate a generic distribution, run `node setup.js package --output wikicambada-core-1.1.0-r2.zip`. The destination must not already exist. The package includes only the Core, generic configuration, migrations, tests, documentation and license; it does not include installation-specific bindings, branding or local state. Verification uses the same mechanism as the updater. Unix launchers receive executable permissions in the ZIP. The TOML and ZIP libraries are bundled in `src/setup/vendor.cjs`; when changing them, regenerate the bundle with `node src/scripts/build-setup-vendor.mjs`.
 
-O destino fica disponível depois da validação do Core e do build público. Uma falha anterior a essa etapa permite repetir a operação. Após encerramento forçado do processo, uma pasta temporária `legacy-migration-*` pode permanecer no `.wikicambada` do diretório pai. Ela pode ser removida com o setup fechado. Proteja essa pasta e o backup, que podem conter configuração privada. Estado local existente em `.wrangler/state` fica no backup para reutilização deliberada com o runtime compatível.
+Manifest hashes verify integrity but do not authenticate the author. The local update API accepts `expectedSha256` to verify a ZIP hash obtained through a trusted channel. The project does not yet provide a release-signing infrastructure.
 
-O setup registra o schema do destino como não verificado. Antes de publicar, faça backup integral de D1 e R2 e homologue com cópias privadas. Confira se o banco tem o schema da 1.0.13 e as migrations 0001–0014 registradas em `d1_migrations`. Com esse registro confirmado, o Wrangler aplica 0015–0017 na etapa explícita de atualização do banco. Se o registro ou o schema divergir, investigue antes de executar o Wrangler. Verifique leitura, edição, permissões, histórico, arquivos e integrações na instalação homologada. Clientes de escrita devem usar os contratos atuais de revisão-base, proteção de origem e upload autenticado.
+The updater requires a distribution with manifests. Use **Migrate a legacy wiki** when the source is a pre-manifest `1.0.13` installation.
 
-## Recuperação
+## Migrating from 1.0.13
 
-A exportação JSON de `/admin/backup` continua sendo uma ferramenta de conteúdo e seed. Ela não restaura uma instalação nem substitui um backup integral.
+In the setup, specify a source directory or select a ZIP of the installation. Use a new destination directory whose parent already exists. From the command line:
 
-O formato de recuperação usa um diretório com `database.sqlite`, objetos separados em `objects/`, inventário `objects.jsonl` e manifesto SHA-256. O banco preserva todo o histórico, usuários e estados, propostas, regras de IP, templates, configurações globais e metadados de mídia. Os objetos R2 mantêm conteúdo e metadados HTTP/customizados.
+```bash
+node setup.js migrate-legacy --source /path/to/source --output /path/to/migrated-wiki
+```
 
-O cliente remoto exige um JWT válido do Cloudflare Access pertencente ao super administrador configurado. O arquivo do token deve conter apenas o JWT. Os comandos abaixo são exemplos para uma instalação sob controle do operador:
+Migration identifies the version using the package, frontend, Wrangler configuration and inventory of 14 migrations. The legacy variant of migration 0009 is accepted by its known hash. The difference is the initial text of a template, which remains in the existing database. The Core uses its own scripts and lockfile, converts identity and navigation, and retains references to D1, R2 and Access. Legacy code and original configuration are stored in `.wikicambada/backups/legacy-1.0.13`. Review the files reported by the setup, including modified code and files retained only in the backup. Wrangler configurations with environments or custom builds require review before migration.
+
+The destination becomes available after the Core and public build have been validated. A failure before that stage allows the operation to be retried. After forced process termination, a temporary `legacy-migration-*` directory may remain under `.wikicambada` in the parent directory. It can be removed with the setup closed. Protect that directory and the backup, which may contain private configuration. Existing local state under `.wrangler/state` is retained in the backup for deliberate reuse with a compatible runtime.
+
+The setup records the destination schema as unverified. Before deploying, create a full D1 and R2 backup and validate the migration using private copies. Confirm that the database has the 1.0.13 schema and migrations 0001–0014 recorded in `d1_migrations`. Once confirmed, Wrangler applies 0015–0017 during the explicit database update step. Investigate any discrepancies in the schema or migration records before running Wrangler. Verify reading, editing, permissions, history, files and integrations in the staging installation. Write clients must use the current base-revision, origin-protection and authenticated-upload contracts.
+
+## Recovery
+
+The JSON export at `/admin/backup` remains a content and seed tool. It does not restore an installation or replace a full backup.
+
+The recovery format uses a directory containing `database.sqlite`, individual objects in `objects/`, an `objects.jsonl` inventory and a SHA-256 manifest. The database preserves full history, users and their states, proposals, IP rules, templates, global settings and media metadata. R2 objects retain their contents and HTTP/custom metadata.
+
+The remote client requires a valid Cloudflare Access JWT belonging to the configured super administrator. The token file must contain only the JWT. These commands are examples for an installation controlled by the operator:
 
 ```bash
 node setup.js backup --url https://wiki.example.com --token-file access.jwt --output backup-wiki
-node setup.js restore --url https://destino.example.com --token-file access.jwt --archive backup-wiki
+node setup.js restore --url https://destination.example.com --token-file access.jwt --archive backup-wiki
 ```
 
-O backup também copia a configuração e os recursos locais dessa instalação. `--configuration` permite indicar outro diretório de configuração. Esses arquivos ficam em `configuration/` no arquivo de recuperação; sua aplicação no checkout de destino é uma etapa local, mantendo os bindings e secrets adequados ao destino. A API não altera a infraestrutura Cloudflare nem suas políticas do Access.
+The backup also copies the installation's configuration and local assets. `--configuration` allows a different configuration directory to be specified. These files are stored in `configuration/` within the recovery archive; applying them to the destination checkout is a local step that retains appropriate bindings and secrets for the destination. The API does not alter Cloudflare infrastructure or Access policies.
 
-A operação fecha temporariamente a wiki e bloqueia gravações no banco. A restauração exige um destino vazio, com as migrations desta versão aplicadas, e valida o arquivo inteiro antes de começar. Transferências usam blocos e objetos separados, sem concentrar a wiki em um único JSON. A abertura do destino só ocorre depois da conferência de contagens, referências e mídia.
+The operation temporarily closes the wiki and blocks database writes. Restoration requires an empty destination with this version's migrations applied and validates the entire archive before starting. Transfers use chunks and separate objects rather than placing the entire wiki in a single JSON file. The destination is opened only after counts, references and media have been verified.
 
-Se a restauração for interrompida, mantenha o arquivo de estado local e execute o mesmo comando com `--resume`. Enquanto estiver incompleta, a wiki permanece fechada. `node setup.js abort-recovery --url https://destino.example.com --token-file access.jwt` remove os dados transferidos pela operação e libera o destino. O bloqueio não expira automaticamente. Se uma conexão cair durante a finalização, confira o estado na API antes de remover o arquivo local; a ausência de bloqueio, sozinha, não comprova uma restauração.
+If restoration is interrupted, retain the local state file and run the same command with `--resume`. The wiki remains closed while restoration is incomplete. `node setup.js abort-recovery --url https://destination.example.com --token-file access.jwt` removes data transferred by the operation and unlocks the destination. The lock does not expire automatically. If a connection drops during finalization, check the API state before deleting the local file; the absence of a lock alone does not prove that restoration succeeded.
 
-Para bancos SQLite e objetos já disponíveis localmente:
+For SQLite databases and objects already available locally:
 
 ```bash
-node setup.js backup-local --database origem.sqlite --objects objetos --configuration configuracao --output backup-local
-node setup.js restore-local --archive backup-local --output destino-novo
+node setup.js backup-local --database source.sqlite --objects objects --configuration configuration --output backup-local
+node setup.js restore-local --archive backup-local --output new-destination
 ```
 
-A restauração local prepara e confere um diretório temporário antes de publicá-lo como destino. Arquivos ausentes, hashes divergentes, schema incompatível e destinos existentes são recusados. As chaves dos objetos devem ser representáveis no sistema de arquivos do arquivo de recuperação; nomes reservados e colisões de caixa são recusados. O formato ainda precisa ser confrontado com as chaves reais da instalação `1.0.13`.
+Local restoration prepares and verifies a temporary directory before publishing it as the destination. Missing files, mismatched hashes, incompatible schemas and existing destinations are rejected. Object keys must be representable on the recovery archive's filesystem; reserved names and case collisions are rejected. The format still needs to be tested against the actual object keys of the `1.0.13` installation.
 
-O backup contém dados privados e pode conter secrets locais. Ele deve ser armazenado com as mesmas restrições de acesso da instalação.
+The backup contains private data and may contain local secrets. Store it with the same access restrictions as the installation.
 
-## Configurações globais
+## Global settings
 
-Administradores e o super administrador podem abrir:
+Administrators and the super administrator can open:
 
 ```text
 /admin/settings
 ```
 
-As opções são armazenadas no D1 e controlam recursos para todos os usuários, incluindo:
+Options are stored in D1 and control features for all users, including:
 
-- páginas especiais
-- busca
-- discussões
-- páginas de usuário
-- sugestões públicas
-- histórico
+- special pages
+- search
+- talk pages
+- user pages
+- public edit proposals
+- history
 - uploads
 - templates
-- categorias
-- página aleatória
-- selo Powered by WikiCambada Core
-- atividade recente
+- categories
+- random page
+- Powered by WikiCambada Core badge
+- recent activity
 
-A migration necessária é:
+The required migration is:
 
 ```text
 src/data/migrations/0015_v1_1_0_global_settings.sql
 ```
 
-## Páginas especiais
+## Special pages
 
-O namespace canônico é:
+The canonical namespace is:
 
 ```text
 /wiki/especial
 ```
 
-Páginas iniciais:
+Initial pages:
 
 ```text
 /wiki/especial/todas-as-paginas
@@ -367,12 +398,15 @@ Páginas iniciais:
 /wiki/especial/versao
 ```
 
-Aliases antigos e equivalentes em inglês continuam aceitos. Páginas especiais geradas pelo Core não podem ser editadas, sugeridas nem receber histórico editorial comum.
+Legacy aliases and English equivalents are still accepted. Special pages generated by the Core cannot be edited, receive edit proposals or have ordinary editorial history.
 
-## Estrutura do projeto
+## Project structure
 
 ```text
 /
+├── README.md
+├── readmes/
+│   └── README.pt-BR.md
 ├── setup.js
 ├── setup.cmd
 ├── setup.sh
@@ -391,67 +425,68 @@ Aliases antigos e equivalentes em inglês continuam aceitos. Páginas especiais 
 └── .wikicambada/
 ```
 
-Entrypoints ficam na raiz. Código e recursos ficam em `/src/`. Dados e migrations ficam em `/src/data/`. Pages Functions permanecem em `/functions/` por exigência da plataforma.
+Entrypoints are in the root directory. Code and assets are in `/src/`. Data and migrations are in `/src/data/`. Pages Functions remain in `/functions/` as required by the platform.
 
-## Segurança
+## Security
 
-- mantenha `ACCESS_STRICT = "true"` em produção e configure issuer/audience do Access
-- proteja `/edit/*`, `/admin/*` e `/api/secure/*` pelo Cloudflare Access
-- não coloque secrets em arquivos públicos
-- faça backup do D1 antes de migrations destrutivas
-- revise regras de IP e permissões de cargos
-- mantenha o Core e o Wrangler atualizados
-- verifique alterações locais antes de substituir arquivos do Core
+- keep `ACCESS_STRICT = "true"` in production and configure the Access issuer and audience
+- protect `/edit/*`, `/admin/*` and `/api/secure/*` with Cloudflare Access
+- do not store secrets in public files
+- back up D1 before destructive migrations
+- review IP rules and role permissions
+- keep the Core and Wrangler up to date
+- review local changes before replacing Core files
 
-`access.mode` gera `WIKI_ACCESS_MODE`: `public` e `cloudflare-access` mantêm leitura pública e edição autenticada; `private` exige identidade verificada e perfil ativo também na leitura. Em uma wiki privada, proteja o host inteiro pelo Cloudflare Access. Os modos existentes de leitura pública continuam sujeitos às permissões internas do Core para edição e administração.
+`access.mode` generates `WIKI_ACCESS_MODE`: `public` and `cloudflare-access` retain public reading and authenticated editing; `private` requires a verified identity and an active profile for reading as well. For a private wiki, protect the entire host with Cloudflare Access. Existing public reading modes remain subject to the Core's internal permissions for editing and administration.
 
-Para administrar localmente sem Cloudflare Access, defina `DEV_BYPASS_AUTH=true` em `.dev.vars` e inicie com `npm run dev`. O servidor de desenvolvimento escuta somente em loopback e fornece a identidade local de super administrador por uma prova temporária gerada no servidor. A flag isolada, headers de identidade e execução em um endereço público não ativam o bypass. Não publique a configuração de desenvolvimento. O modo legado `WIKI_DEV_AUTH` continua exigindo `ACCESS_STRICT="false"` e loopback.
+To administer a local installation without Cloudflare Access, set `DEV_BYPASS_AUTH=true` in `.dev.vars` and start it with `npm run dev`. The development server listens only on loopback and provides a local super administrator identity through a temporary server-generated proof. The flag alone, identity headers and execution on a public address do not enable the bypass. Do not deploy the development configuration. The legacy `WIKI_DEV_AUTH` mode still requires `ACCESS_STRICT="false"` and loopback.
 
-Operações de escrita das APIs exigem `X-Wiki-Request: 1`; origens diferentes e `Sec-Fetch-Site: cross-site` são recusadas. Revisões, restaurações de revisão e aprovação de propostas exigem `expectedRevisionId` (`null` apenas para uma página nova). A ausência retorna HTTP 428; uma base obsoleta retorna 409. A resolução de conflitos preserva o conteúdo local até a decisão do editor.
+API write operations require `X-Wiki-Request: 1`; different origins and `Sec-Fetch-Site: cross-site` are rejected. Revisions, revision restorations and proposal approvals require `expectedRevisionId` (`null` only for a new page). Omission returns HTTP 428; a stale base returns 409. Conflict resolution preserves local content until the editor makes a decision.
 
-O Pages publica exclusivamente `.wikicambada/public`, preparado por `npm run build`. Os scripts de desenvolvimento e publicação executam esse preparo. O builder copia uma lista explícita de HTML, JS, CSS e dados públicos, além dos formatos de mídia/fontes permitidos. `.dev.vars`, estado, backups, instalador, migrations, ZIPs e configurações privadas ficam fora dos assets. Pages Functions continuam em `/functions/`.
+Pages deploys only `.wikicambada/public`, prepared by `npm run build`. Development and deployment scripts run this preparation step. The builder copies an explicit list of public HTML, JS, CSS and data files, along with allowed media and font formats. `.dev.vars`, state, backups, the installer, migrations, ZIPs and private configuration are excluded from public assets. Pages Functions remain in `/functions/`.
 
-## Desenvolvimento
+## Development
 
-Em um clone novo, `node setup.js verify` confere os arquivos do Core e a estrutura local da configuração. Para instalar as dependências do lockfile, execute `npm ci`. Use uma cópia separada para testar a configuração de uma wiki, pois o setup grava `site.json`, `installation.json` e `wrangler.toml` na pasta em que está instalado.
+In a fresh clone, `node setup.js verify` checks Core files and the local configuration structure. To install the lockfile dependencies, run `npm ci`. Use a separate copy to test wiki configuration, since the setup writes `site.json`, `installation.json` and `wrangler.toml` in the directory where it is installed.
 
-Servidor local do Pages:
+Local Pages server:
 
 ```bash
 npm run dev
 ```
 
-Verificação do projeto:
+Project verification:
 
 ```bash
 node setup.js verify
 ```
 
-Testes locais e tipos:
+Local tests, type checking and build:
 
 ```bash
 npm test
+npm run typecheck
 npm run build
 ```
 
-Os testes usam SQLite, D1/R2 locais do Miniflare e fixtures temporárias. Incluem o worker de Pages compilado, migrations pelo Wrangler local, interrupções de gravação, concorrência, recuperação HTTP com retomada, atualização do ZIP e seleção de assets. Não acessam recursos Cloudflare de produção. A consulta de saúde distingue o schema exigido do registro de migrations realmente encontrado no banco.
+Tests use SQLite, local Miniflare D1/R2 and temporary fixtures. They cover the compiled Pages worker, migrations through local Wrangler, interrupted writes, concurrency, resumable HTTP recovery, ZIP updates and asset selection. They do not access production Cloudflare resources. The health check distinguishes the required schema from migration records actually found in the database.
 
-As migrations ficam em `src/data/migrations/`. O histórico de versões está em [CHANGELOG.MD](CHANGELOG.MD).
+Migrations are located in `src/data/migrations/`. Version history is available in [CHANGELOG.MD](CHANGELOG.MD).
 
-## Créditos
+## Credits
 
-WikiCambada Core foi criado e é mantido por **masondoceu**. O projeto nasceu como base técnica da WikiCambada e evoluiu para um motor implementável em outras wikis.
+WikiCambada Core was created and is maintained by **masondoceu**. The project originated as the technical foundation of WikiCambada and evolved into an engine that can be deployed for other wikis.
 
-A experiência do setup usa o instalador do MediaWiki como referência de fluxo e separação de etapas, sem reutilizar seu código PHP nem se apresentar como uma implementação do MediaWiki.
+The setup experience draws inspiration from the MediaWiki installer for its workflow and separation of steps, without reusing its PHP code or presenting itself as an implementation of MediaWiki.
 
-O ícone oficial do WikiCambada Core é o **Cat Guard**. Miau.
+The official WikiCambada Core icon is the **Cat Guard**. Meow.
 
-## Licença e direitos autorais
+## License and copyright
 
-O código é distribuído sob a **GNU Affero General Public License, versão 3**. Consulte [LICENSE](LICENSE) para os termos completos.
+The code is distributed under the **GNU Affero General Public License, version 3**. See [LICENSE](LICENSE) for the full terms.
 
-A AGPL exige, entre outras condições, que usuários de uma versão modificada disponibilizada por rede possam obter o código-fonte correspondente dessa versão.
+Among other conditions, the AGPL requires that users interacting over a network with a modified version be able to obtain the corresponding source code of that version.
 
-A licença do código não transfere automaticamente direitos sobre nomes, logos, imagens, artigos, uploads ou outros conteúdos pertencentes a cada instalação. Operadores devem verificar separadamente as permissões dos assets e conteúdos que utilizarem.
+The code license does not automatically transfer rights to names, logos, images, articles, uploads or other content belonging to individual installations. Operators must separately verify the permissions for the assets and content they use.
 
-Copyright © 2026 masondoceu e contribuidores do WikiCambada Core.
+Copyright © 2026 masondoceu and WikiCambada Core contributors.
