@@ -2,8 +2,9 @@ import { readAccessUser } from './api/_lib/access'
 import { getActiveIpRule, recordActivity, type Env } from './api/_lib/d1'
 import { error } from './api/_lib/response'
 import { seedInitialContent } from './api/_lib/initial-content'
+import type { ReaderData } from './_lib/read-document'
 
-type Context = EventContext<Env, string, Record<string, never>>
+type Context = EventContext<Env, string, ReaderData>
 
 function isExemptPath(pathname: string) {
   return pathname.startsWith('/admin') ||
@@ -17,18 +18,18 @@ function isExemptPath(pathname: string) {
     pathname === '/404.html'
 }
 
-function applyHeaders(response: Response, pathname: string) {
+function applyHeaders(response: Response, pathname: string, privateMode = false) {
   const headers = new Headers(response.headers)
   headers.set('x-content-type-options', 'nosniff')
   headers.set('referrer-policy', 'strict-origin-when-cross-origin')
   headers.set('x-frame-options', 'DENY')
   headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=()')
 
-  if (pathname.startsWith('/api/')) {
+  if (privateMode || pathname.startsWith('/api/')) {
     headers.set('cache-control', 'no-store')
-  } else if (pathname.startsWith('/src/') || /\.(png|jpg|jpeg|webp|gif|ico|css|js)$/i.test(pathname)) {
+  } else if (!headers.has('cache-control') && (pathname.startsWith('/src/') || /\.(png|jpg|jpeg|webp|gif|ico|css|js)$/i.test(pathname))) {
     headers.set('cache-control', 'public, max-age=3600')
-  } else {
+  } else if (!headers.has('cache-control')) {
     headers.set('cache-control', 'no-cache')
   }
 
@@ -64,6 +65,13 @@ export async function onRequest(context: Context) {
   }
 
   const recoveryRoute = url.pathname === '/api/secure/admin/recovery'
+  const privateMode = context.env.WIKI_ACCESS_MODE === 'private'
+  if (privateMode && (url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml')) {
+    const response = url.pathname === '/robots.txt'
+      ? new Response('User-agent: *\nDisallow: /\n', { headers: { 'content-type': 'text/plain; charset=utf-8' } })
+      : new Response(null, { status: 404 })
+    return applyHeaders(response, url.pathname, true)
+  }
   if (context.env.DB && !recoveryRoute) {
     try {
       const lock = await context.env.DB.prepare('SELECT id FROM core_recovery_lock WHERE id = 1').first()
@@ -77,6 +85,9 @@ export async function onRequest(context: Context) {
   if (!recoveryRoute && context.env.WIKI_ACCESS_MODE === 'private' && !url.pathname.startsWith('/api/auth') && !url.pathname.startsWith('/access-') && !url.pathname.startsWith('/login-error') && (!user?.canEdit || (!user.verified && user.access !== 'development'))) {
     return applyHeaders(error(user?.authenticated ? 'permissão insuficiente' : 'autenticação obrigatória', user?.authenticated ? 403 : 401), url.pathname)
   }
+  if (context.data && user?.canEdit && user.status === 'active' && (user.verified || user.access === 'development')) {
+    context.data.readerRole = user.role || 'editor'
+  }
   if (!recoveryRoute) await recordActivity(context.env, context.request, user).catch(() => null)
 
   let response: Response
@@ -86,5 +97,5 @@ export async function onRequest(context: Context) {
     response = error(status < 500 && cause instanceof Error ? cause.message : 'serviço temporariamente indisponível', status)
   }
   if (url.pathname.startsWith('/api/') && response.status >= 500) response = error('serviço temporariamente indisponível', response.status)
-  return applyHeaders(response, url.pathname)
+  return applyHeaders(response, url.pathname, privateMode)
 }

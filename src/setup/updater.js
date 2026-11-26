@@ -28,9 +28,9 @@ function legacyAssets(project) {
   return Array.isArray(assets) ? assets.filter(name => typeof name === 'string' && /^src\/media\/(?:images|fonts|branding)\//.test(name)) : []
 }
 export function versionTuple(value) {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc|r)(?:[.-]?(\d+))?)?$/.exec(String(value || ''))
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-(indev|alpha|beta|rc|r)(?:[.-]?(\d+))?)?$/.exec(String(value || ''))
   if (!match) throw new Error('versão não suportada')
-  return [+match[1], +match[2], +match[3], { alpha: 0, beta: 1, rc: 2, r: 4 }[match[4]] ?? 3, +(match[5] || 0)]
+  return [+match[1], +match[2], +match[3], { indev: -1, alpha: 0, beta: 1, rc: 2, r: 4 }[match[4]] ?? 3, +(match[5] || 0)]
 }
 export function compareVersions(a, b) { const first = versionTuple(a), second = versionTuple(b); for (let i = 0; i < first.length; i++) if (first[i] !== second[i]) return first[i] - second[i]; return 0 }
 export async function extractZip(archive, target) {

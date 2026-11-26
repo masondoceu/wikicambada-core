@@ -44,7 +44,7 @@ function applyIcon(iconUrl) {
     logo.dataset.currentIconUrl = iconUrl
   })
 
-  if (favicon) favicon.href = iconUrl
+  if (favicon) favicon.href = SITE_CONFIG.branding?.randomIcons ? iconUrl : assetUrl(SITE_CONFIG.branding?.favicon, iconUrl)
 }
 
 export async function bootRandomIcon() {

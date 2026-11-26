@@ -10,7 +10,7 @@ WIKI_ACCESS_MODE = "cloudflare-access"
 PUBLIC_BASE_URL = ""
 WIKI_SITE_NAME = "Minha Wiki"
 WIKI_SUPER_ADMIN_EMAIL = ""
-WIKI_CORE_VERSION = "v1.1.0-r2"
+WIKI_CORE_VERSION = "v1.1.1-indev.1"
 WIKI_FEATURES_JSON = "{\"cloudflareBadge\":true,\"builtWithCloudflareBadge\":false}"
 
 [[d1_databases]]

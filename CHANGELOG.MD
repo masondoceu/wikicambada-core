@@ -1,5 +1,12 @@
 # Changelog do WikiCambada Core
 
+## v1.1.1-indev.1 · Everywhere
+
+- Server-render public reading routes and enhance the initial HTML with the existing SPA.
+- Share editorial rendering between Cloudflare Pages Functions and the browser.
+- Add page-specific metadata, a dynamic sitemap, and configurable crawler directives.
+- Preserve database schema 17. This is a development build.
+
 ## v1.1.0-r2
 
 Revisão corretiva da série v1.1.0, com foco na separação entre o Core distribuível e a instalação WikiCambada, segurança do setup e consistência da interface configurável.

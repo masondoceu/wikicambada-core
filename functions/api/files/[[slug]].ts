@@ -1,4 +1,4 @@
-import { globalSettingEnabled, hasDb, readUpload, normalizeSlug, type Env } from '../_lib/d1'
+import { globalSettingEnabled, hasDb, readUpload, normalizeSlug, publicUploadMetadata, type Env } from '../_lib/d1'
 import { error, json } from '../_lib/response'
 
 type Context = EventContext<Env, string, { slug?: string[] | string }>
@@ -30,9 +30,7 @@ export async function onRequestGet({ env, params }: Context) {
   if (!file) return error('arquivo não encontrado', 404)
 
   if (!wantsContent) {
-    const { uploadedByEmail, deletedByEmail, r2Key, ...publicFile } = file
-    const profile: any = uploadedByEmail ? await env.DB!.prepare('SELECT display_name FROM editor_profiles WHERE email = ?').bind(uploadedByEmail).first() : null
-    return json({ ...publicFile, uploadedByName: profile?.display_name || 'editor' })
+    return json(await publicUploadMetadata(env, file))
   }
   if (!env.WIKI_BUCKET) return error('R2 ainda não foi ligado para servir arquivos', 501)
 

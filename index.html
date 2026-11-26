@@ -14,7 +14,7 @@
       const allowed = ['auto', 'light', 'dark', 'oled']
       const fontAllowed = ['mactype', 'classic']
       const textSizeAllowed = ['small', 'normal', 'large']
-      let choice = 'auto'
+      let choice = document.documentElement.dataset.themeChoice || 'auto'
       const platform = navigator.userAgentData?.platform || navigator.platform || ''
       const userAgent = navigator.userAgent || ''
       const vendor = navigator.vendor || ''
@@ -45,6 +45,7 @@
     })()
   </script>
   <link rel="stylesheet" href="/src/styles/wiki.css" />
+  <noscript><style>.settings-nav,.mobile-settings-panel{display:none}</style></noscript>
 </head>
 <body>
   <div class="boot-screen" id="bootScreen" role="status" aria-live="polite">
@@ -170,7 +171,7 @@
             <a class="tab" href="/" data-link="history" data-chrome-link="history-tab" data-i18n="shell.history">Ver histórico</a>
           </nav>
 
-          <form class="search-box" id="searchForm" role="search">
+          <form class="search-box" id="searchForm" role="search" action="/search" method="get">
             <label for="searchInput" class="sr-only" data-i18n="shell.search">Pesquisar na wiki</label>
             <input id="searchInput" name="q" type="search" placeholder="Pesquisar na wiki" data-i18n-placeholder="shell.search" autocomplete="off" />
             <button type="submit" aria-label="Pesquisar" data-i18n-aria-label="shell.searchAction">⌕</button>

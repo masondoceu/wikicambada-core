@@ -1,700 +1,941 @@
-import { APP_VERSION, SLOGAN, HOME_SLUG, SITE_CONFIG, SITE_NAME, featureEnabled } from '../core/config.js'
+import { APP_VERSION, HOME_SLUG, SITE_NAME, featureEnabled } from '../core/config.js'
+import { applyTemplateVars, browserRenderRuntime, escapeHtml, formatDate, pageUrl, searchUrl, slugify, titleFromSlug } from '../core/utils.js'
 import { interfaceLanguage, interfaceLocale } from '../core/i18n.js'
-import { applyTemplateVars, escapeHtml, formatDate, isCurrentAppUrl, pageUrl, searchUrl, slugify, titleFromSlug } from '../core/utils.js'
-import { extractHeadings, inlineMarkdown, markdownToHtml } from './wiki-markdown.js'
+import { createMarkdownRenderer } from './wiki-markdown.js'
+
+function formatBytes(bytes = 0, locale = interfaceLocale()) {
+  const value = Number(bytes || 0)
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toLocaleString(locale, { maximumFractionDigits: 1 })} MB`
+  if (value >= 1024) return `${(value / 1024).toLocaleString(locale, { maximumFractionDigits: 1 })} KB`
+  return `${value.toLocaleString(locale)} bytes`
+}
 
 const ui = (portuguese, english) => interfaceLanguage() === 'en' ? english : portuguese
-
-function safePublicUrl(value) {
-  try {
-    const parsed = new URL(String(value || ''), window.location.href)
-    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return ''
-    return isCurrentAppUrl(parsed.href) ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.href
-  } catch {
-    return ''
-  }
-}
 
 export function setDocumentTitle(page, suffix = '') {
   const title = page?.title || SITE_NAME
   document.title = suffix ? `${title}${suffix} - ${SITE_NAME}` : `${title} - ${SITE_NAME}`
 }
 
-export function infoboxHtml(box) {
-  if (!box) return ''
+export function createWikiRenderer(runtime) {
+  const { extractHeadings, inlineMarkdown, markdownToHtml } = createMarkdownRenderer(runtime)
+  const sameOrigin = value => new URL(value, runtime.href).origin === new URL(runtime.href).origin
+  const date = value => escapeHtml(formatDate(value, runtime.locale()))
+  const slugTitle = value => titleFromSlug(value, runtime.language())
+  const ui = (portuguese, english) => runtime.language() === 'en' ? english : portuguese
 
-  const rows = (box.rows || [])
-    .map(row => `
-      <div class="infobox-row">
-        <b>${escapeHtml(row.label)}</b>
-        <span>${inlineMarkdown(row.value)}</span>
-      </div>
-    `)
-    .join('')
-  const images = Array.isArray(box.images) && box.images.length
-    ? box.images
-    : box.image
-      ? [{ src: box.image, caption: box.caption || '' }]
-      : []
-  const imageHtml = images.map((image, index) => {
-    const src = safePublicUrl(image.src || image.url || image.image || '')
-    if (!src) return ''
-    const caption = image.caption || image.legenda || ''
-    const title = images.length > 1 ? `${box.title || 'Infocaixa'} ${index + 1}` : box.title
+  function safePublicUrl(value) {
+    try {
+      const parsed = new URL(String(value || ''), runtime.href)
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return ''
+      return sameOrigin(parsed.href) ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.href
+    } catch {
+      return ''
+    }
+  }
+
+  function infoboxHtml(box) {
+    if (!box) return ''
+
+    const rows = (box.rows || [])
+      .map(row => `
+        <div class="infobox-row">
+          <b>${escapeHtml(row.label)}</b>
+          <span>${inlineMarkdown(row.value)}</span>
+        </div>
+      `)
+      .join('')
+    const images = Array.isArray(box.images) && box.images.length
+      ? box.images
+      : box.image
+        ? [{ src: box.image, caption: box.caption || '' }]
+        : []
+    const imageHtml = images.map((image, index) => {
+      const src = safePublicUrl(image.src || image.url || image.image || '')
+      if (!src) return ''
+      const caption = image.caption || image.legenda || ''
+      const title = images.length > 1 ? `${box.title || 'Infocaixa'} ${index + 1}` : box.title
+      return `
+        <figure class="infobox-image">
+          <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(caption || title || '')}" data-media-viewer draggable="false" role="button" tabindex="0" data-media-type="image" data-media-src="${escapeHtml(src)}" data-media-title="${escapeHtml(title || caption || 'imagem')}" data-media-caption="${escapeHtml(caption || '')}" />
+          ${caption ? `<figcaption class="infobox-caption">${inlineMarkdown(caption)}</figcaption>` : ''}
+        </figure>
+      `
+    }).join('')
+
     return `
-      <figure class="infobox-image">
-        <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(caption || title || '')}" data-media-viewer draggable="false" role="button" tabindex="0" data-media-type="image" data-media-src="${escapeHtml(src)}" data-media-title="${escapeHtml(title || caption || 'imagem')}" data-media-caption="${escapeHtml(caption || '')}" />
-        ${caption ? `<figcaption class="infobox-caption">${inlineMarkdown(caption)}</figcaption>` : ''}
-      </figure>
+      <aside class="infobox" aria-label="Infocaixa">
+        <div class="infobox-title">${escapeHtml(box.title)}</div>
+        ${box.subtitle ? `<div class="infobox-subtitle">${escapeHtml(box.subtitle)}</div>` : ''}
+        ${imageHtml}
+        ${rows}
+      </aside>
     `
-  }).join('')
+  }
 
-  return `
-    <aside class="infobox" aria-label="Infocaixa">
-      <div class="infobox-title">${escapeHtml(box.title)}</div>
-      ${box.subtitle ? `<div class="infobox-subtitle">${escapeHtml(box.subtitle)}</div>` : ''}
-      ${imageHtml}
-      ${rows}
-    </aside>
-  `
-}
+  function categoryUrl(category) {
+    return runtime.pageUrl(`categoria/${slugify(category)}`)
+  }
 
-export function categoryUrl(category) {
-  return pageUrl(`categoria/${slugify(category)}`)
-}
+  function categoriesHtml(categories = []) {
+    if (!categories.length) return ''
 
-export function categoriesHtml(categories = []) {
-  if (!categories.length) return ''
-
-  return `<div class="categories">${ui('Categorias', 'Categories')}: ${categories.map(category => `<a href="${categoryUrl(category)}" data-link="page" data-slug="categoria/${slugify(category)}">${escapeHtml(category)}</a>`).join(' · ')}</div>`
-}
+    return `<div class="categories">${ui('Categorias', 'Categories')}: ${categories.map(category => `<a href="${categoryUrl(category)}" data-link="page" data-slug="categoria/${slugify(category)}">${escapeHtml(category)}</a>`).join(' · ')}</div>`
+  }
 
 
-function fileDetailsUrl(file) {
-  return pageUrl(`arquivo/${file.slug}`)
-}
+  function fileDetailsUrl(file) {
+    return runtime.pageUrl(`arquivo/${file.slug}`)
+  }
 
-function mediaAttrsForFile(file, caption = '') {
-  const isVideo = String(file.mimeType || '').startsWith('video/')
-  const interactive = isVideo
-    ? []
-    : [
-      'data-media-viewer',
-      'role="button"',
-      'tabindex="0"'
+  function mediaAttrsForFile(file, caption = '') {
+    const isVideo = String(file.mimeType || '').startsWith('video/')
+    const interactive = isVideo
+      ? []
+      : [
+        'data-media-viewer',
+        'role="button"',
+        'tabindex="0"'
+      ]
+    return [
+      ...interactive,
+      'draggable="false"',
+      `data-media-type="${isVideo ? 'video' : 'image'}"`,
+      `data-media-src="${escapeHtml(file.contentUrl)}"`,
+      `data-media-title="${escapeHtml(file.filename)}"`,
+      `data-media-caption="${escapeHtml(caption || file.description || file.filename)}"`,
+      `data-media-details="${escapeHtml(fileDetailsUrl(file))}"`
+    ].join(' ')
+  }
+
+  function breadcrumbsHtml(page) {
+    const crumbs = [
+      `<a href="${runtime.pageUrl(runtime.config.site.homeSlug)}" data-link="home">${ui('Página principal', 'Main page')}</a>`
     ]
-  return [
-    ...interactive,
-    'draggable="false"',
-    `data-media-type="${isVideo ? 'video' : 'image'}"`,
-    `data-media-src="${escapeHtml(file.contentUrl)}"`,
-    `data-media-title="${escapeHtml(file.filename)}"`,
-    `data-media-caption="${escapeHtml(caption || file.description || file.filename)}"`,
-    `data-media-details="${escapeHtml(fileDetailsUrl(file))}"`
-  ].join(' ')
-}
 
-function breadcrumbsHtml(page) {
-  const crumbs = [
-    `<a href="${pageUrl(HOME_SLUG)}" data-link="home">${ui('Página principal', 'Main page')}</a>`
-  ]
+    if (page?.slug?.startsWith('categoria/')) {
+      crumbs.push(`<a href="${runtime.pageUrl('categorias')}" data-link="page" data-slug="categorias">${ui('Categorias', 'Categories')}</a>`)
+    } else if (page?.categories?.length) {
+      const category = page.categories[0]
+      crumbs.push(`<a href="${categoryUrl(category)}" data-link="page" data-slug="categoria/${slugify(category)}">${escapeHtml(category)}</a>`)
+    }
 
-  if (page?.slug?.startsWith('categoria/')) {
-    crumbs.push(`<a href="${pageUrl('categorias')}" data-link="page" data-slug="categorias">${ui('Categorias', 'Categories')}</a>`)
-  } else if (page?.categories?.length) {
-    const category = page.categories[0]
-    crumbs.push(`<a href="${categoryUrl(category)}" data-link="page" data-slug="categoria/${slugify(category)}">${escapeHtml(category)}</a>`)
+    if (page?.title) crumbs.push(`<span>${escapeHtml(page.title)}</span>`)
+
+    return `<nav class="breadcrumbs" aria-label="${ui('Caminho', 'Breadcrumb')}">${crumbs.join('<span aria-hidden="true">›</span>')}</nav>`
   }
 
-  if (page?.title) crumbs.push(`<span>${escapeHtml(page.title)}</span>`)
+  function tocTree(headings = []) {
+    const root = { level: 1, children: [] }
+    const stack = [root]
 
-  return `<nav class="breadcrumbs" aria-label="${ui('Caminho', 'Breadcrumb')}">${crumbs.join('<span aria-hidden="true">›</span>')}</nav>`
-}
+    for (const heading of headings) {
+      const node = { ...heading, level: Math.min(4, Math.max(2, heading.level)), children: [] }
+      while (stack.length > 1 && stack[stack.length - 1].level >= node.level) stack.pop()
+      stack[stack.length - 1].children.push(node)
+      stack.push(node)
+    }
 
-function tocTree(headings = []) {
-  const root = { level: 1, children: [] }
-  const stack = [root]
-
-  for (const heading of headings) {
-    const node = { ...heading, level: Math.min(4, Math.max(2, heading.level)), children: [] }
-    while (stack.length > 1 && stack[stack.length - 1].level >= node.level) stack.pop()
-    stack[stack.length - 1].children.push(node)
-    stack.push(node)
+    return root.children
   }
 
-  return root.children
-}
+  function tocListHtml(nodes = []) {
+    if (!nodes.length) return ''
 
-function tocListHtml(nodes = []) {
-  if (!nodes.length) return ''
-
-  return `
-    <ol>
-      ${nodes.map(node => `
-        <li class="toc-level-${node.level}">
-          <a href="#${escapeHtml(node.id)}">${escapeHtml(node.title)}</a>
-          ${tocListHtml(node.children)}
-        </li>
-      `).join('')}
-    </ol>
-  `
-}
-
-function tocHtml(content = '') {
-  if (String(content || '').includes('__NOTOC__')) return ''
-
-  const headings = extractHeadings(content)
-  const force = String(content || '').includes('__TOC__')
-  if (!force) return ''
-  if (!headings.length) return ''
-
-  return `
-    <details class="article-toc" open>
-      <summary><strong>${ui('Índice', 'Contents')}</strong> <span class="toc-toggle-label" aria-hidden="true"></span></summary>
-      ${tocListHtml(tocTree(headings))}
-    </details>
-  `
-}
-
-
-function resolvedNoticeHtml(page) {
-  if (!page?.resolvedFrom) return ''
-
-  const kind = page.resolvedBy === 'redirect' ? ui('redirecionamento', 'redirect') : ui('alias de título', 'title alias')
-  return `
-    <aside class="messagebox messagebox-info resolved-notice">
-      ${ui('Esta página foi aberta por', 'This page was opened through a')} ${kind}: <code>${escapeHtml(page.resolvedFrom)}</code>.
-    </aside>
-  `
-}
-
-function aliasesHtml(page) {
-  const aliases = page?.aliases || []
-  const redirectRules = Array.isArray(page?.redirectRules) && page.redirectRules.length
-    ? page.redirectRules
-    : (page?.redirects || []).map(fromSlug => ({ fromSlug, fragment: '' }))
-  if (!aliases.length && !redirectRules.length) return ''
-
-  return `
-    <section class="article-aliases" aria-label="${ui('Aliases e redirecionamentos', 'Aliases and redirects')}">
-      ${aliases.length ? `<p><strong>${ui("Aliases:", "Aliases:")}</strong> ${aliases.map(alias => `<code>${escapeHtml(alias.title || alias.slug)}</code>`).join(' ')}</p>` : ''}
-      ${redirectRules.length ? `<p><strong>${ui('Redirecionamentos', 'Redirects')}:</strong> ${redirectRules.map(rule => `<code>${escapeHtml(rule.fromSlug || rule)}${rule.fragment ? ` → #${escapeHtml(rule.fragment)}` : ''}</code>`).join(' ')}</p>` : ''}
-    </section>
-  `
-}
-
-export function footerHtml(page) {
-  const aboutSlug = SITE_CONFIG.site?.aboutSlug || 'sobre'
-  const editGuideSlug = SITE_CONFIG.site?.editGuideSlug || (interfaceLocale() === 'en-US' ? 'editing-guide' : 'como-editar')
-  const externalLinks = (SITE_CONFIG.navigation?.external || [])
-    .map(item => ({ ...item, href: safePublicUrl(item.href) }))
-    .filter(item => item.href)
-    .map(item => `<a href="${escapeHtml(item.href)}" rel="noreferrer">${escapeHtml(item.label || item.href)}</a>`)
-    .join('')
-  const historyLink = featureEnabled('pageHistory')
-    ? `<a href="${pageUrl(page.slug, 'history')}" data-link="history" data-slug="${escapeHtml(page.slug)}">${ui('Histórico', 'History')}</a>`
-    : ''
-  const poweredText = featureEnabled('coreBadge')
-    ? `<p>Powered by <a href="${pageUrl('especial/versao')}" data-link="page" data-slug="especial/versao">WikiCambada Core</a> <a class="core-version" href="${pageUrl('especial/versao')}" data-link="page" data-slug="especial/versao">${escapeHtml(APP_VERSION)}</a>.</p>`
-    : ''
-  const cloudflareBadge = featureEnabled('cloudflareBadge')
-    ? '<li class="footer-cloudflare-item"><a class="footer-cloudflare-link" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer"><img class="footer-cloudflare-badge" src="/src/media/images/protectedby-cloudflare.png" alt="Protected by Cloudflare" loading="lazy" /></a></li>'
-    : ''
-  const builtWithCloudflareBadge = featureEnabled('builtWithCloudflareBadge', false)
-    ? '<li class="footer-cloudflare-item"><a class="footer-cloudflare-link" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer"><img class="footer-cloudflare-badge footer-cloudflare-built" src="/src/media/images/built-with-cloudflare.svg" alt="Built with Cloudflare" loading="lazy" /></a></li>'
-    : ''
-  const coreBadge = featureEnabled('coreBadge')
-    ? `<li><a class="footer-poweredby-badge" href="${pageUrl('especial/versao')}" data-link="page" data-slug="especial/versao"><img src="${escapeHtml(safePublicUrl(SITE_CONFIG.branding?.poweredByBadge) || '/src/media/images/poweredby-wikicambada-core.png')}" alt="Powered by WikiCambada Core" loading="lazy" /></a></li>`
-    : ''
-  const poweredBadge = cloudflareBadge || builtWithCloudflareBadge || coreBadge
-    ? `<ul class="footer-poweredby-list" aria-label="${ui('Tecnologia usada', 'Technology')}">${cloudflareBadge}${builtWithCloudflareBadge}${coreBadge}</ul>`
-    : ''
-
-  return `
-    <footer class="footer">
-      <div class="footer-main">
-        <div class="footer-copy">
-          <p>${ui('Esta página foi editada pela última vez em', 'This page was last edited on')} ${formatDate(page.updatedAt || new Date().toISOString())}.</p>
-          ${poweredText}
-          <nav class="footer-links" aria-label="${ui('Rodapé', 'Footer')}">
-            <a href="${pageUrl(aboutSlug)}" data-link="page" data-slug="${escapeHtml(aboutSlug)}">${ui('Sobre', 'About')} ${escapeHtml(SITE_CONFIG.site?.shortName || SITE_NAME)}</a>
-            <a href="${pageUrl(editGuideSlug)}" data-link="page" data-slug="${escapeHtml(editGuideSlug)}">${ui('Como editar', 'How to edit')}</a>
-            ${historyLink}
-            ${externalLinks}
-          </nav>
-        </div>
-        ${poweredBadge}
-      </div>
-    </footer>
-  `
-}
-
-export function articleHtml(page, context = {}) {
-  const hasInfobox = Boolean(page.infobox)
-  const className = page.slug === HOME_SLUG ? ' article--main-page' : ''
-  const content = applyTemplateVars(page.content, context)
-  const forcedToc = String(content || '').includes('__TOC__')
-  const tableOfContents = forcedToc ? tocHtml(content) : ''
-  const bodyHtml = markdownToHtml(content, {
-    templates: context.templates || [],
-    tocHtml: tableOfContents
-  })
-
-  return `
-    <article class="wiki-article${className}">
-      <header class="article-header">
-        <h1>${escapeHtml(page.title)}</h1>
-        <p class="article-subtitle">${escapeHtml(page.subtitle || `${SITE_NAME} — ${SLOGAN}`)}</p>
-      </header>
-
-      ${breadcrumbsHtml(page)}
-      ${resolvedNoticeHtml(page)}
-      <div class="article-grid" style="grid-template-columns:${hasInfobox ? 'minmax(0, 1fr) 320px' : 'minmax(0, 1fr)'}">
-        <div class="article-body">${bodyHtml}</div>
-        ${infoboxHtml(page.infobox)}
-      </div>
-
-      ${aliasesHtml(page)}
-      ${featureEnabled('categories') ? categoriesHtml(page.categories) : ''}
-      ${footerHtml(page)}
-    </article>
-  `
-}
-
-
-export function editorPreviewHtml(page, context = {}) {
-  const previewPage = {
-    ...page,
-    updatedAt: new Date().toISOString()
-  }
-
-  return `
-    <section class="editor-preview" aria-live="polite">
-      <div class="editor-preview-header">
-        <h2>${ui('Pré-visualização', 'Preview')}</h2>
-        <p>${ui('Esta visualização é gerada no navegador e pode diferir do resultado publicado pelo back-end.', 'This preview is generated in the browser and may differ from the result published by the back end.')}</p>
-      </div>
-      ${articleHtml(previewPage, context)}
-    </section>
-  `
-}
-
-export function notFoundHtml(slug, user = { authenticated: false }) {
-  const readableTitle = titleFromSlug(slug)
-  const canSuggest = featureEnabled('publicSuggestions')
-  const action = user.canEdit
-    ? `<a class="primary-button" href="${pageUrl(slug, 'edit')}" data-link="edit" data-slug="${escapeHtml(slug)}">${ui('Criar página', 'Create page')}</a>`
-    : canSuggest
-      ? `<a class="primary-button" href="${pageUrl(slug, 'suggest')}" data-link="suggest" data-slug="${escapeHtml(slug)}">${ui('Sugerir agora', 'Suggest now')}</a>`
-      : ''
-  const message = user.canEdit
-    ? `${ui('A página', 'The page')} <code>${escapeHtml(readableTitle)}</code> ${ui('não existe, mas você pode criá-la agora.', 'does not exist, but you can create it now.')}`
-    : canSuggest
-      ? `${ui('A página', 'The page')} <code>${escapeHtml(readableTitle)}</code> ${ui('não existe, mas você pode sugeri-la agora.', 'does not exist, but you can suggest it now.')}`
-      : `${ui('A página', 'The page')} <code>${escapeHtml(readableTitle)}</code> ${ui('não existe e sugestões públicas estão desativadas.', 'does not exist and public suggestions are disabled.')}`
-
-  return `
-    <article class="not-found-page">
-      <header class="article-header">
-        <h1>${ui('Página não encontrada', 'Page not found')}</h1>
-        <p class="article-subtitle">${ui('A página solicitada ainda não possui registro publicado em', 'The requested page has no published record in')} ${escapeHtml(SITE_NAME)}.</p>
-      </header>
-
-      <div class="empty-state">
-        <p>${message}</p>
-        <p>${ui('URL procurada', 'Requested URL')}: <code>${escapeHtml(pageUrl(slug))}</code>.</p>
-      </div>
-
-      <div class="editor-actions">
-        ${action}
-        <a class="secondary-button" href="/" data-link="home">${ui('Voltar à página principal', 'Return to the main page')}</a>
-      </div>
-    </article>
-  `
-}
-
-function historyRoute(slug, params = {}) {
-  const search = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
-  }
-  return `${pageUrl(slug, 'history')}${search.toString() ? `?${search}` : ''}`
-}
-
-function revisionSummaryHtml(revision) {
-  return `
-    <dl class="revision-summary">
-      <div><dt>${ui("Revisão", "Revision")}</dt><dd>${escapeHtml(revision.revisionNumber || '')}${revision.isCurrent ? ` <span class="revision-current">${ui("atual", "current")}</span>` : ''}</dd></div>
-      <div><dt>${ui("Data", "Date")}</dt><dd>${formatDate(revision.createdAt)}</dd></div>
-      <div><dt>${ui("Autor", "Author")}</dt><dd>${escapeHtml(revision.authorName || revision.author || ui("editor não identificado", "unknown editor"))}</dd></div>
-      <div><dt>${ui("Resumo", "Summary")}</dt><dd>${escapeHtml(revision.summary || ui("sem resumo", "no summary"))}</dd></div>
-    </dl>
-  `
-}
-
-function lineDiffRows(oldText = '', newText = '') {
-  const oldLines = String(oldText || '').split('\n')
-  const newLines = String(newText || '').split('\n')
-  const rows = []
-  const max = Math.max(oldLines.length, newLines.length)
-
-  for (let i = 0; i < max; i += 1) {
-    const before = oldLines[i] ?? ''
-    const after = newLines[i] ?? ''
-    const changed = before !== after
-    rows.push(`
-      <tr class="${changed ? 'diff-row-changed' : 'diff-row-same'}">
-        <td class="diff-line-number">${i + 1}</td>
-        <td><pre>${escapeHtml(before)}</pre></td>
-        <td><pre>${escapeHtml(after)}</pre></td>
-      </tr>
-    `)
-  }
-
-  return rows.join('')
-}
-
-export function historyHtml(page, data = {}, user = {}) {
-  const revisions = data?.revisions || page.revisions || []
-  const rows = revisions.map(revision => {
-    const revisionNumber = revision.revisionNumber || revision.revision_number
     return `
-      <tr>
-        <td>${formatDate(revision.createdAt || revision.created_at)}</td>
-        <td>${escapeHtml(revision.authorName || revision.author || revision.author_email || ui("editor não identificado", "unknown editor"))}</td>
-        <td>${escapeHtml(revision.summary || ui("sem resumo", "no summary"))}</td>
-        <td>${revision.isCurrent ? `<span class="revision-current">${ui("atual", "current")}</span>` : escapeHtml(revisionNumber)}</td>
-        <td class="history-actions">
-          <a href="${historyRoute(page.slug, { revision: revisionNumber })}" data-link="route">${ui("ver", "view")}</a>
-          <a href="${historyRoute(page.slug, { compare: revisionNumber })}" data-link="route">${ui("comparar com atual", "compare with current")}</a>
-          ${user.canEdit && !revision.isCurrent ? `<button type="button" data-restore-revision="${escapeHtml(revisionNumber)}" data-slug="${escapeHtml(page.slug)}" data-base-revision="${escapeHtml(page.currentRevisionId || '')}">${ui("restaurar", "restore")}</button>` : ''}
-        </td>
-      </tr>
+      <ol>
+        ${nodes.map(node => `
+          <li class="toc-level-${node.level}">
+            <a href="#${escapeHtml(node.id)}">${escapeHtml(node.title)}</a>
+            ${tocListHtml(node.children)}
+          </li>
+        `).join('')}
+      </ol>
     `
-  }).join('')
-
-  return `
-    <article class="history-page">
-      <header class="article-header">
-        <h1>${ui("Histórico de “", "History of “")}${escapeHtml(page.title)}”</h1>
-        <p class="article-subtitle">${ui("Cada edição registrada gera uma revisão associada à página.", "Each saved edit creates a revision associated with the page.")}</p>
-      </header>
-
-      <table class="history-table">
-        <thead>
-          <tr>
-            <th>${ui("Data", "Date")}</th>
-            <th>${ui("Autor", "Author")}</th>
-            <th>${ui("Resumo", "Summary")}</th>
-            <th>${ui("Versão", "Version")}</th>
-            <th>${ui("Ações", "Actions")}</th>
-          </tr>
-        </thead>
-        <tbody>${rows || `<tr><td colspan="5">${ui("Nenhuma revisão registrada.", "No revisions recorded.")}</td></tr>`}</tbody>
-      </table>
-
-      ${footerHtml(page)}
-    </article>
-  `
-}
-
-export function revisionHtml(page, revision, context = {}, user = {}) {
-  const revisionPage = {
-    ...page,
-    title: revision.title || page.title,
-    subtitle: revision.subtitle ?? page.subtitle,
-    content: revision.content || '',
-    categories: revision.categories ?? page.categories ?? [],
-    updatedAt: revision.createdAt
   }
 
-  return `
-    <article class="revision-page">
-      <header class="article-header">
-        <h1>${ui("Revisão ", "Revision ")}${escapeHtml(revision.revisionNumber)} de “${escapeHtml(revisionPage.title)}”</h1>
-        <p class="article-subtitle">${ui("Esta é uma versão arquivada da página. Ela pode não corresponder ao conteúdo atual.", "This is an archived version of the page and may differ from its current content.")}</p>
-      </header>
+  function tocHtml(content = '') {
+    if (String(content || '').includes('__NOTOC__')) return ''
 
-      ${revisionSummaryHtml(revision)}
+    const headings = extractHeadings(content)
+    const force = String(content || '').includes('__TOC__')
+    if (!force) return ''
+    if (!headings.length) return ''
 
-      <div class="editor-actions revision-actions">
-        <a class="secondary-button" href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui("Ver versão atual", "View current version")}</a>
-        <a class="secondary-button" href="${historyRoute(page.slug, { compare: revision.revisionNumber })}" data-link="route">${ui("Comparar com atual", "Compare with current")}</a>
-        <a class="secondary-button" href="${pageUrl(page.slug, 'history')}" data-link="history" data-slug="${escapeHtml(page.slug)}">${ui("Voltar ao histórico", "Back to history")}</a>
-        ${user.canEdit && !revision.isCurrent ? `<button class="primary-button" type="button" data-restore-revision="${escapeHtml(revision.revisionNumber)}" data-slug="${escapeHtml(page.slug)}" data-base-revision="${escapeHtml(page.currentRevisionId || '')}">${ui("Restaurar esta revisão", "Restore this revision")}</button>` : ''}
-      </div>
-
-      ${articleHtml(revisionPage, context)}
-    </article>
-  `
-}
-
-export function revisionCompareHtml(page, oldRevision, currentPage, user = {}) {
-  const currentRevisionNumber = (currentPage.revisions || []).find(revision => revision.isCurrent)?.revisionNumber || 'atual'
-
-  return `
-    <article class="revision-compare-page">
-      <header class="article-header">
-        <h1>${ui("Comparação de revisões: “", "Revision comparison: “")}${escapeHtml(page.title)}”</h1>
-        <p class="article-subtitle">${ui("Comparação simples entre a revisão ", "Comparison between revision ")}${escapeHtml(oldRevision.revisionNumber)}${ui(" e a versão atual.", " and the current version.")}</p>
-      </header>
-
-      <section class="comparison-meta">
-        <div>
-          <h2>${ui("Revisão ", "Revision ")}${escapeHtml(oldRevision.revisionNumber)}</h2>
-          ${revisionSummaryHtml(oldRevision)}
-        </div>
-        <div>
-          <h2>${ui("Versão atual", "Current version")}</h2>
-          <p>${escapeHtml(currentRevisionNumber)} · editada em ${formatDate(currentPage.updatedAt)}</p>
-        </div>
-      </section>
-
-      <table class="diff-table">
-        <thead>
-          <tr>
-            <th>${ui("Linha", "Line")}</th>
-            <th>${ui("Revisão ", "Revision ")}${escapeHtml(oldRevision.revisionNumber)}</th>
-            <th>${ui("Atual", "Current")}</th>
-          </tr>
-        </thead>
-        <tbody>${lineDiffRows(oldRevision.content || '', currentPage.content || '')}</tbody>
-      </table>
-
-      <div class="editor-actions revision-actions">
-        <a class="secondary-button" href="${historyRoute(page.slug, { revision: oldRevision.revisionNumber })}" data-link="route">${ui("Ver revisão antiga", "View old revision")}</a>
-        <a class="secondary-button" href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui("Ver versão atual", "View current version")}</a>
-        <a class="secondary-button" href="${pageUrl(page.slug, 'history')}" data-link="history" data-slug="${escapeHtml(page.slug)}">${ui("Voltar ao histórico", "Back to history")}</a>
-        ${user.canEdit && !oldRevision.isCurrent ? `<button class="primary-button" type="button" data-restore-revision="${escapeHtml(oldRevision.revisionNumber)}" data-slug="${escapeHtml(page.slug)}" data-base-revision="${escapeHtml(page.currentRevisionId || '')}">${ui("Restaurar revisão ", "Restore revision ")}${escapeHtml(oldRevision.revisionNumber)}</button>` : ''}
-      </div>
-    </article>
-  `
-}
-
-
-
-function safeSnippet(value) {
-  return escapeHtml(value || '').replaceAll('&lt;mark&gt;', '<mark>').replaceAll('&lt;/mark&gt;', '</mark>')
-}
-
-function searchResultTitle(page) {
-  const title = String(page?.title || page?.displayTitle || '').trim()
-  if (title) return title
-  const slug = String(page?.slug || '').split('/').filter(Boolean).pop() || 'resultado'
-  return slug.replace(/[-_]+/g, ' ').replace(/\b\p{L}/gu, letter => letter.toLocaleUpperCase(interfaceLocale()))
-}
-
-function searchResultSubtitle(page) {
-  return String(page?.subtitle || page?.matchType || page?.matchedTitle || page?.matchedSlug || page?.slug || '').trim()
-}
-
-function pageDateValue(value) {
-  const clean = String(value || '').trim()
-  if (!clean) return 0
-  const timestamp = Date.parse(clean.includes('T') ? clean : clean.replace(' ', 'T'))
-  return Number.isFinite(timestamp) ? timestamp : 0
-}
-
-function pageListRows(pages = [], { recent = false } = {}) {
-  const orderedPages = recent
-    ? [...pages].sort((pageA, pageB) => {
-      const dateA = pageDateValue(pageA?.updatedAt || pageA?.createdAt)
-      const dateB = pageDateValue(pageB?.updatedAt || pageB?.createdAt)
-      return dateB - dateA || String(pageA?.title || '').localeCompare(String(pageB?.title || ''), interfaceLocale())
-    })
-    : pages
-
-  return orderedPages.map(page => `
-    <tr>
-      <td><a href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${escapeHtml(page.title)}</a></td>
-      <td>${escapeHtml(page.subtitle || '')}</td>
-      ${recent ? `<td>${formatDate(page.updatedAt)}</td>` : ''}
-      <td>${escapeHtml(page.slug)}</td>
-    </tr>
-  `).join('')
-}
-
-export function allPagesHtml(pages = []) {
-  return `
-    <article class="special-page special-page-all-pages">
-      <header class="article-header">
-        <h1>${ui('Todas as páginas', 'All pages')}</h1>
-        <p class="article-subtitle">${ui('Índice alfabético das páginas publicadas no D1.', 'Alphabetical index of pages published in D1.')}</p>
-      </header>
-
-      <table class="history-table page-index-table">
-        <thead>
-          <tr>
-            <th>${ui('Título', 'Title')}</th>
-            <th>${ui('Subtítulo', 'Subtitle')}</th>
-            <th>Slug</th>
-          </tr>
-        </thead>
-        <tbody>${pages.length ? pageListRows(pages) : `<tr><td colspan="3">${ui('Nenhuma página publicada.', 'No published pages.')}</td></tr>`}</tbody>
-      </table>
-    </article>
-  `
-}
-
-export function recentPagesHtml(pages = []) {
-  return `
-    <article class="special-page special-page-recent-pages">
-      <header class="article-header">
-        <h1>${ui('Páginas recentes', 'Recent pages')}</h1>
-        <p class="article-subtitle">${ui('Páginas publicadas ou atualizadas mais recentemente.', 'Pages most recently published or updated.')}</p>
-      </header>
-
-      <table class="history-table page-index-table">
-        <thead>
-          <tr>
-            <th>${ui('Título', 'Title')}</th>
-            <th>${ui('Subtítulo', 'Subtitle')}</th>
-            <th>${ui('Última atualização', 'Last update')}</th>
-            <th>Slug</th>
-          </tr>
-        </thead>
-        <tbody>${pages.length ? pageListRows(pages, { recent: true }) : `<tr><td colspan="4">${ui('Nenhuma página publicada.', 'No published pages.')}</td></tr>`}</tbody>
-      </table>
-    </article>
-  `
-}
-
-export function categoriesIndexHtml(categories = []) {
-  return `
-    <article class="special-page special-page-categories">
-      <header class="article-header">
-        <h1>${ui('Categorias', 'Categories')}</h1>
-        <p class="article-subtitle">${ui('Índice das categorias com páginas publicadas em', 'Index of categories containing pages published in')} ${escapeHtml(SITE_NAME)}.</p>
-      </header>
-
-      <section class="category-grid">
-        ${categories.length ? categories.map(category => `
-          <a class="category-card" href="${categoryUrl(category.name)}" data-link="page" data-slug="categoria/${slugify(category.name)}">
-            <strong>${escapeHtml(category.name)}</strong>
-            <span>${Number(category.pageCount || 0).toLocaleString(interfaceLocale())} ${ui('página(s)', 'page(s)')}</span>
-          </a>
-        `).join('') : `<p class="empty-state">${ui('Nenhuma categoria publicada.', 'No published categories.')}</p>`}
-      </section>
-    </article>
-  `
-}
-
-export function categoryPageHtml(category) {
-  const page = {
-    slug: `categoria/${category.slug}`,
-    title: `${ui('Categoria', 'Category')}: ${category.name}`,
-    subtitle: ui('Páginas associadas a esta categoria.', 'Pages associated with this category.'),
-    categories: []
+    return `
+      <details class="article-toc" open>
+        <summary><strong>${ui('Índice', 'Contents')}</strong> <span class="toc-toggle-label" aria-hidden="true"></span></summary>
+        ${tocListHtml(tocTree(headings))}
+      </details>
+    `
   }
 
-  return `
-    <article class="special-page category-page">
-      <header class="article-header">
-        <h1>${ui('Categoria', 'Category')}: ${escapeHtml(category.name)}</h1>
-        <p class="article-subtitle">${ui('Páginas associadas a esta categoria.', 'Pages associated with this category.')}</p>
-      </header>
 
-      ${breadcrumbsHtml(page)}
+  function resolvedNoticeHtml(page) {
+    if (!page?.resolvedFrom) return ''
 
-      <table class="history-table page-index-table">
-        <thead>
-          <tr>
-            <th>${ui('Título', 'Title')}</th>
-            <th>${ui('Subtítulo', 'Subtitle')}</th>
-            <th>Slug</th>
-          </tr>
-        </thead>
-        <tbody>${category.pages?.length ? pageListRows(category.pages) : `<tr><td colspan="3">${ui('Nenhuma página publicada nesta categoria.', 'No pages are published in this category.')}</td></tr>`}</tbody>
-      </table>
-    </article>
-  `
-}
+    const kind = page.resolvedBy === 'redirect' ? ui('redirecionamento', 'redirect') : ui('alias de título', 'title alias')
+    return `
+      <aside class="messagebox messagebox-info resolved-notice">
+        ${ui('Esta página foi aberta por', 'This page was opened through a')} ${kind}: <code>${escapeHtml(page.resolvedFrom)}</code>.
+      </aside>
+    `
+  }
 
-export function searchHtml(query, results, user = { authenticated: false }) {
-  const cleanQuery = String(query || '').trim()
-  const slug = slugify(cleanQuery)
-  const canEdit = Boolean(user?.canEdit)
-  const canSuggest = featureEnabled('publicSuggestions')
-  const missingAction = canEdit
-    ? `<a class="primary-button" href="${pageUrl(slug, 'edit')}" data-link="edit" data-slug="${escapeHtml(slug)}">${ui('Criar página', 'Create page')}</a>`
-    : canSuggest
-      ? `<a class="primary-button" href="${pageUrl(slug, 'suggest')}" data-link="suggest" data-slug="${escapeHtml(slug)}">${ui('Sugerir agora', 'Suggest now')}</a>`
+  function aliasesHtml(page) {
+    const aliases = page?.aliases || []
+    const redirectRules = Array.isArray(page?.redirectRules) && page.redirectRules.length
+      ? page.redirectRules
+      : (page?.redirects || []).map(fromSlug => ({ fromSlug, fragment: '' }))
+    if (!aliases.length && !redirectRules.length) return ''
+
+    return `
+      <section class="article-aliases" aria-label="${ui('Aliases e redirecionamentos', 'Aliases and redirects')}">
+        ${aliases.length ? `<p><strong>${ui("Aliases:", "Aliases:")}</strong> ${aliases.map(alias => `<code>${escapeHtml(alias.title || alias.slug)}</code>`).join(' ')}</p>` : ''}
+        ${redirectRules.length ? `<p><strong>${ui('Redirecionamentos', 'Redirects')}:</strong> ${redirectRules.map(rule => `<code>${escapeHtml(rule.fromSlug || rule)}${rule.fragment ? ` → #${escapeHtml(rule.fragment)}` : ''}</code>`).join(' ')}</p>` : ''}
+      </section>
+    `
+  }
+
+  function footerHtml(page) {
+    const aboutSlug = runtime.config.site?.aboutSlug || 'sobre'
+    const editGuideSlug = runtime.config.site?.editGuideSlug || (runtime.locale() === 'en-US' ? 'editing-guide' : 'como-editar')
+    const externalLinks = (runtime.config.navigation?.external || [])
+      .map(item => ({ ...item, href: safePublicUrl(item.href) }))
+      .filter(item => item.href)
+      .map(item => `<a href="${escapeHtml(item.href)}" rel="noreferrer">${escapeHtml(item.label || item.href)}</a>`)
+      .join('')
+    const historyLink = runtime.featureEnabled('pageHistory')
+      ? `<a href="${runtime.pageUrl(page.slug, 'history')}" data-link="history" data-slug="${escapeHtml(page.slug)}">${ui('Histórico', 'History')}</a>`
       : ''
-  const missingText = canEdit
-    ? `${ui('A página', 'The page')} <code>${escapeHtml(cleanQuery)}</code> ${ui('não existe, mas você pode criá-la agora.', 'does not exist, but you can create it now.')}`
-    : canSuggest
-      ? `${ui('A página', 'The page')} <code>${escapeHtml(cleanQuery)}</code> ${ui('não existe, mas você pode sugeri-la agora.', 'does not exist, but you can suggest it now.')}`
-      : `${ui('A página', 'The page')} <code>${escapeHtml(cleanQuery)}</code> ${ui('não existe e sugestões públicas estão desativadas.', 'does not exist and public suggestions are disabled.')}`
-  const hasExact = results.some(page => page.exact || slugify(searchResultTitle(page)) === slug || String(page.slug || '') === slug)
+    const poweredText = runtime.featureEnabled('coreBadge')
+      ? `<p>Powered by <a href="${runtime.pageUrl('especial/versao')}" data-link="page" data-slug="especial/versao">WikiCambada Core</a> <a class="core-version" href="${runtime.pageUrl('especial/versao')}" data-link="page" data-slug="especial/versao">${escapeHtml(runtime.version)}</a>.</p>`
+      : ''
+    const cloudflareBadge = runtime.featureEnabled('cloudflareBadge')
+      ? '<li class="footer-cloudflare-item"><a class="footer-cloudflare-link" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer"><img class="footer-cloudflare-badge" src="/src/media/images/protectedby-cloudflare.png" alt="Protected by Cloudflare" loading="lazy" /></a></li>'
+      : ''
+    const builtWithCloudflareBadge = runtime.featureEnabled('builtWithCloudflareBadge', false)
+      ? '<li class="footer-cloudflare-item"><a class="footer-cloudflare-link" href="https://www.cloudflare.com/" target="_blank" rel="noopener noreferrer"><img class="footer-cloudflare-badge footer-cloudflare-built" src="/src/media/images/built-with-cloudflare.svg" alt="Built with Cloudflare" loading="lazy" /></a></li>'
+      : ''
+    const coreBadge = runtime.featureEnabled('coreBadge')
+      ? `<li><a class="footer-poweredby-badge" href="${runtime.pageUrl('especial/versao')}" data-link="page" data-slug="especial/versao"><img src="${escapeHtml(safePublicUrl(runtime.config.branding?.poweredByBadge) || '/src/media/images/poweredby-wikicambada-core.png')}" alt="Powered by WikiCambada Core" loading="lazy" /></a></li>`
+      : ''
+    const poweredBadge = cloudflareBadge || builtWithCloudflareBadge || coreBadge
+      ? `<ul class="footer-poweredby-list" aria-label="${ui('Tecnologia usada', 'Technology')}">${cloudflareBadge}${builtWithCloudflareBadge}${coreBadge}</ul>`
+      : ''
 
-  return `
-    <header class="article-header">
-      <h1>${ui('Resultados da busca', 'Search results')}</h1>
-      <p class="article-subtitle">${ui('Pesquisa por', 'Search for')} “${escapeHtml(cleanQuery)}”.</p>
-    </header>
+    return `
+      <footer class="footer">
+        <div class="footer-main">
+          <div class="footer-copy">
+            <p>${ui('Esta página foi editada pela última vez em', 'This page was last edited on')} ${date(page.updatedAt || new Date().toISOString())}.</p>
+            ${poweredText}
+            <nav class="footer-links" aria-label="${ui('Rodapé', 'Footer')}">
+              <a href="${runtime.pageUrl(aboutSlug)}" data-link="page" data-slug="${escapeHtml(aboutSlug)}">${ui('Sobre', 'About')} ${escapeHtml(runtime.config.site?.shortName || runtime.config.site.name)}</a>
+              <a href="${runtime.pageUrl(editGuideSlug)}" data-link="page" data-slug="${escapeHtml(editGuideSlug)}">${ui('Como editar', 'How to edit')}</a>
+              ${historyLink}
+              ${externalLinks}
+            </nav>
+          </div>
+          ${poweredBadge}
+        </div>
+      </footer>
+    `
+  }
 
-    <section class="search-results">
-      ${results.length ? results.map(page => {
-        const title = searchResultTitle(page)
-        const subtitle = searchResultSubtitle(page)
-        return `
-          <article class="search-result">
-            <h2><a href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${escapeHtml(title)}</a></h2>
-            <p>${safeSnippet(page.snippet || subtitle || '')}</p>
-            <small>${escapeHtml(page.exact ? `${ui('correspondência exata por', 'exact match by')} ${page.matchType || ui('resultado', 'result')}` : page.matchType || ui('resultado', 'result'))}${page.updatedAt ? ` · ${ui('atualizado em', 'updated on')} ${formatDate(page.updatedAt)}` : ''}</small>
-          </article>
+  function articleHtml(page, context = {}) {
+    const hasInfobox = Boolean(page.infobox)
+    const className = page.slug === runtime.config.site.homeSlug ? ' article--main-page' : ''
+    const content = applyTemplateVars(page.content, context)
+    const forcedToc = String(content || '').includes('__TOC__')
+    const tableOfContents = forcedToc ? tocHtml(content) : ''
+    const bodyHtml = markdownToHtml(content, {
+      templates: context.templates || [],
+      tocHtml: tableOfContents
+    })
+
+    return `
+      <article class="wiki-article${className}">
+        <header class="article-header">
+          <h1>${escapeHtml(page.title)}</h1>
+          <p class="article-subtitle">${escapeHtml(page.subtitle || `${runtime.config.site.name} — ${runtime.config.site.tagline}`)}</p>
+        </header>
+
+        ${breadcrumbsHtml(page)}
+        ${resolvedNoticeHtml(page)}
+        <div class="article-grid" style="grid-template-columns:${hasInfobox ? 'minmax(0, 1fr) 320px' : 'minmax(0, 1fr)'}">
+          <div class="article-body">${bodyHtml}</div>
+          ${infoboxHtml(page.infobox)}
+        </div>
+
+        ${aliasesHtml(page)}
+        ${runtime.featureEnabled('categories') ? categoriesHtml(page.categories) : ''}
+        ${footerHtml(page)}
+      </article>
+    `
+  }
+
+
+  function editorPreviewHtml(page, context = {}) {
+    const previewPage = {
+      ...page,
+      updatedAt: new Date().toISOString()
+    }
+
+    return `
+      <section class="editor-preview" aria-live="polite">
+        <div class="editor-preview-header">
+          <h2>${ui('Pré-visualização', 'Preview')}</h2>
+          <p>${ui('Esta visualização é gerada no navegador e pode diferir do resultado publicado pelo back-end.', 'This preview is generated in the browser and may differ from the result published by the back end.')}</p>
+        </div>
+        ${articleHtml(previewPage, context)}
+      </section>
+    `
+  }
+
+  function notFoundHtml(slug, user = { authenticated: false }) {
+    const readableTitle = slugTitle(slug)
+    const canSuggest = runtime.featureEnabled('publicSuggestions')
+    const action = user.canEdit
+      ? `<a class="primary-button" href="${runtime.pageUrl(slug, 'edit')}" data-link="edit" data-slug="${escapeHtml(slug)}">${ui('Criar página', 'Create page')}</a>`
+      : canSuggest
+        ? `<a class="primary-button" href="${runtime.pageUrl(slug, 'suggest')}" data-link="suggest" data-slug="${escapeHtml(slug)}">${ui('Sugerir agora', 'Suggest now')}</a>`
+        : ''
+    const message = user.canEdit
+      ? `${ui('A página', 'The page')} <code>${escapeHtml(readableTitle)}</code> ${ui('não existe, mas você pode criá-la agora.', 'does not exist, but you can create it now.')}`
+      : canSuggest
+        ? `${ui('A página', 'The page')} <code>${escapeHtml(readableTitle)}</code> ${ui('não existe, mas você pode sugeri-la agora.', 'does not exist, but you can suggest it now.')}`
+        : `${ui('A página', 'The page')} <code>${escapeHtml(readableTitle)}</code> ${ui('não existe e sugestões públicas estão desativadas.', 'does not exist and public suggestions are disabled.')}`
+
+    return `
+      <article class="not-found-page">
+        <header class="article-header">
+          <h1>${ui('Página não encontrada', 'Page not found')}</h1>
+          <p class="article-subtitle">${ui('A página solicitada ainda não possui registro publicado em', 'The requested page has no published record in')} ${escapeHtml(runtime.config.site.name)}.</p>
+        </header>
+
+        <div class="empty-state">
+          <p>${message}</p>
+          <p>${ui('URL procurada', 'Requested URL')}: <code>${escapeHtml(runtime.pageUrl(slug))}</code>.</p>
+        </div>
+
+        <div class="editor-actions">
+          ${action}
+          <a class="secondary-button" href="/" data-link="home">${ui('Voltar à página principal', 'Return to the main page')}</a>
+        </div>
+      </article>
+    `
+  }
+
+  function historyRoute(slug, params = {}) {
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
+    }
+    return `${runtime.pageUrl(slug, 'history')}${search.toString() ? `?${search}` : ''}`
+  }
+
+  function revisionSummaryHtml(revision) {
+    return `
+      <dl class="revision-summary">
+        <div><dt>${ui("Revisão", "Revision")}</dt><dd>${escapeHtml(revision.revisionNumber || '')}${revision.isCurrent ? ` <span class="revision-current">${ui("atual", "current")}</span>` : ''}</dd></div>
+        <div><dt>${ui("Data", "Date")}</dt><dd>${date(revision.createdAt)}</dd></div>
+        <div><dt>${ui("Autor", "Author")}</dt><dd>${escapeHtml(revision.authorName || revision.author || ui("editor não identificado", "unknown editor"))}</dd></div>
+        <div><dt>${ui("Resumo", "Summary")}</dt><dd>${escapeHtml(revision.summary || ui("sem resumo", "no summary"))}</dd></div>
+      </dl>
+    `
+  }
+
+  function lineDiffRows(oldText = '', newText = '') {
+    const oldLines = String(oldText || '').split('\n')
+    const newLines = String(newText || '').split('\n')
+    const rows = []
+    const max = Math.max(oldLines.length, newLines.length)
+
+    for (let i = 0; i < max; i += 1) {
+      const before = oldLines[i] ?? ''
+      const after = newLines[i] ?? ''
+      const changed = before !== after
+      rows.push(`
+        <tr class="${changed ? 'diff-row-changed' : 'diff-row-same'}">
+          <td class="diff-line-number">${i + 1}</td>
+          <td><pre>${escapeHtml(before)}</pre></td>
+          <td><pre>${escapeHtml(after)}</pre></td>
+        </tr>
+      `)
+    }
+
+    return rows.join('')
+  }
+
+  function historyHtml(page, data = {}, user = {}) {
+    const revisions = data?.revisions || page.revisions || []
+    const rows = revisions.map(revision => {
+      const revisionNumber = revision.revisionNumber || revision.revision_number
+      return `
+        <tr>
+          <td>${date(revision.createdAt || revision.created_at)}</td>
+          <td>${escapeHtml(revision.authorName || revision.author || revision.author_email || ui("editor não identificado", "unknown editor"))}</td>
+          <td>${escapeHtml(revision.summary || ui("sem resumo", "no summary"))}</td>
+          <td>${revision.isCurrent ? `<span class="revision-current">${ui("atual", "current")}</span>` : escapeHtml(revisionNumber)}</td>
+          <td class="history-actions">
+            <a href="${historyRoute(page.slug, { revision: revisionNumber })}" data-link="route">${ui("ver", "view")}</a>
+            <a href="${historyRoute(page.slug, { compare: revisionNumber })}" data-link="route">${ui("comparar com atual", "compare with current")}</a>
+            ${user.canEdit && !revision.isCurrent ? `<button type="button" data-restore-revision="${escapeHtml(revisionNumber)}" data-slug="${escapeHtml(page.slug)}" data-base-revision="${escapeHtml(page.currentRevisionId || '')}">${ui("restaurar", "restore")}</button>` : ''}
+          </td>
+        </tr>
+      `
+    }).join('')
+
+    return `
+      <article class="history-page">
+        <header class="article-header">
+          <h1>${ui("Histórico de “", "History of “")}${escapeHtml(page.title)}”</h1>
+          <p class="article-subtitle">${ui("Cada edição registrada gera uma revisão associada à página.", "Each saved edit creates a revision associated with the page.")}</p>
+        </header>
+
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>${ui("Data", "Date")}</th>
+              <th>${ui("Autor", "Author")}</th>
+              <th>${ui("Resumo", "Summary")}</th>
+              <th>${ui("Versão", "Version")}</th>
+              <th>${ui("Ações", "Actions")}</th>
+            </tr>
+          </thead>
+          <tbody>${rows || `<tr><td colspan="5">${ui("Nenhuma revisão registrada.", "No revisions recorded.")}</td></tr>`}</tbody>
+        </table>
+
+        ${footerHtml(page)}
+      </article>
+    `
+  }
+
+  function revisionHtml(page, revision, context = {}, user = {}) {
+    const revisionPage = {
+      ...page,
+      title: revision.title || page.title,
+      subtitle: revision.subtitle ?? page.subtitle,
+      content: revision.content || '',
+      categories: revision.categories ?? page.categories ?? [],
+      updatedAt: revision.createdAt
+    }
+
+    return `
+      <article class="revision-page">
+        <header class="article-header">
+          <h1>${ui("Revisão ", "Revision ")}${escapeHtml(revision.revisionNumber)} de “${escapeHtml(revisionPage.title)}”</h1>
+          <p class="article-subtitle">${ui("Esta é uma versão arquivada da página. Ela pode não corresponder ao conteúdo atual.", "This is an archived version of the page and may differ from its current content.")}</p>
+        </header>
+
+        ${revisionSummaryHtml(revision)}
+
+        <div class="editor-actions revision-actions">
+          <a class="secondary-button" href="${runtime.pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui("Ver versão atual", "View current version")}</a>
+          <a class="secondary-button" href="${historyRoute(page.slug, { compare: revision.revisionNumber })}" data-link="route">${ui("Comparar com atual", "Compare with current")}</a>
+          <a class="secondary-button" href="${runtime.pageUrl(page.slug, 'history')}" data-link="history" data-slug="${escapeHtml(page.slug)}">${ui("Voltar ao histórico", "Back to history")}</a>
+          ${user.canEdit && !revision.isCurrent ? `<button class="primary-button" type="button" data-restore-revision="${escapeHtml(revision.revisionNumber)}" data-slug="${escapeHtml(page.slug)}" data-base-revision="${escapeHtml(page.currentRevisionId || '')}">${ui("Restaurar esta revisão", "Restore this revision")}</button>` : ''}
+        </div>
+
+        ${articleHtml(revisionPage, context)}
+      </article>
+    `
+  }
+
+  function revisionCompareHtml(page, oldRevision, currentPage, user = {}) {
+    const currentRevisionNumber = (currentPage.revisions || []).find(revision => revision.isCurrent)?.revisionNumber || 'atual'
+
+    return `
+      <article class="revision-compare-page">
+        <header class="article-header">
+          <h1>${ui("Comparação de revisões: “", "Revision comparison: “")}${escapeHtml(page.title)}”</h1>
+          <p class="article-subtitle">${ui("Comparação simples entre a revisão ", "Comparison between revision ")}${escapeHtml(oldRevision.revisionNumber)}${ui(" e a versão atual.", " and the current version.")}</p>
+        </header>
+
+        <section class="comparison-meta">
+          <div>
+            <h2>${ui("Revisão ", "Revision ")}${escapeHtml(oldRevision.revisionNumber)}</h2>
+            ${revisionSummaryHtml(oldRevision)}
+          </div>
+          <div>
+            <h2>${ui("Versão atual", "Current version")}</h2>
+            <p>${escapeHtml(currentRevisionNumber)} · editada em ${date(currentPage.updatedAt)}</p>
+          </div>
+        </section>
+
+        <table class="diff-table">
+          <thead>
+            <tr>
+              <th>${ui("Linha", "Line")}</th>
+              <th>${ui("Revisão ", "Revision ")}${escapeHtml(oldRevision.revisionNumber)}</th>
+              <th>${ui("Atual", "Current")}</th>
+            </tr>
+          </thead>
+          <tbody>${lineDiffRows(oldRevision.content || '', currentPage.content || '')}</tbody>
+        </table>
+
+        <div class="editor-actions revision-actions">
+          <a class="secondary-button" href="${historyRoute(page.slug, { revision: oldRevision.revisionNumber })}" data-link="route">${ui("Ver revisão antiga", "View old revision")}</a>
+          <a class="secondary-button" href="${runtime.pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui("Ver versão atual", "View current version")}</a>
+          <a class="secondary-button" href="${runtime.pageUrl(page.slug, 'history')}" data-link="history" data-slug="${escapeHtml(page.slug)}">${ui("Voltar ao histórico", "Back to history")}</a>
+          ${user.canEdit && !oldRevision.isCurrent ? `<button class="primary-button" type="button" data-restore-revision="${escapeHtml(oldRevision.revisionNumber)}" data-slug="${escapeHtml(page.slug)}" data-base-revision="${escapeHtml(page.currentRevisionId || '')}">${ui("Restaurar revisão ", "Restore revision ")}${escapeHtml(oldRevision.revisionNumber)}</button>` : ''}
+        </div>
+      </article>
+    `
+  }
+
+
+
+  function safeSnippet(value) {
+    return escapeHtml(value || '').replaceAll('&lt;mark&gt;', '<mark>').replaceAll('&lt;/mark&gt;', '</mark>')
+  }
+
+  function searchResultTitle(page) {
+    const title = String(page?.title || page?.displayTitle || '').trim()
+    if (title) return title
+    const slug = String(page?.slug || '').split('/').filter(Boolean).pop() || 'resultado'
+    return slug.replace(/[-_]+/g, ' ').replace(/\b\p{L}/gu, letter => letter.toLocaleUpperCase(runtime.locale()))
+  }
+
+  function searchResultSubtitle(page) {
+    return String(page?.subtitle || page?.matchType || page?.matchedTitle || page?.matchedSlug || page?.slug || '').trim()
+  }
+
+  function pageDateValue(value) {
+    const clean = String(value || '').trim()
+    if (!clean) return 0
+    const timestamp = Date.parse(clean.includes('T') ? clean : clean.replace(' ', 'T'))
+    return Number.isFinite(timestamp) ? timestamp : 0
+  }
+
+  function pageListRows(pages = [], { recent = false } = {}) {
+    const orderedPages = recent
+      ? [...pages].sort((pageA, pageB) => {
+        const dateA = pageDateValue(pageA?.updatedAt || pageA?.createdAt)
+        const dateB = pageDateValue(pageB?.updatedAt || pageB?.createdAt)
+        return dateB - dateA || String(pageA?.title || '').localeCompare(String(pageB?.title || ''), runtime.locale())
+      })
+      : pages
+
+    return orderedPages.map(page => `
+      <tr>
+        <td><a href="${runtime.pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${escapeHtml(page.title)}</a></td>
+        <td>${escapeHtml(page.subtitle || '')}</td>
+        ${recent ? `<td>${date(page.updatedAt)}</td>` : ''}
+        <td>${escapeHtml(page.slug)}</td>
+      </tr>
+    `).join('')
+  }
+
+  function allPagesHtml(pages = []) {
+    return `
+      <article class="special-page special-page-all-pages">
+        <header class="article-header">
+          <h1>${ui('Todas as páginas', 'All pages')}</h1>
+          <p class="article-subtitle">${ui('Índice alfabético das páginas publicadas no D1.', 'Alphabetical index of pages published in D1.')}</p>
+        </header>
+
+        <table class="history-table page-index-table">
+          <thead>
+            <tr>
+              <th>${ui('Título', 'Title')}</th>
+              <th>${ui('Subtítulo', 'Subtitle')}</th>
+              <th>Slug</th>
+            </tr>
+          </thead>
+          <tbody>${pages.length ? pageListRows(pages) : `<tr><td colspan="3">${ui('Nenhuma página publicada.', 'No published pages.')}</td></tr>`}</tbody>
+        </table>
+      </article>
+    `
+  }
+
+  function recentPagesHtml(pages = []) {
+    return `
+      <article class="special-page special-page-recent-pages">
+        <header class="article-header">
+          <h1>${ui('Páginas recentes', 'Recent pages')}</h1>
+          <p class="article-subtitle">${ui('Páginas publicadas ou atualizadas mais recentemente.', 'Pages most recently published or updated.')}</p>
+        </header>
+
+        <table class="history-table page-index-table">
+          <thead>
+            <tr>
+              <th>${ui('Título', 'Title')}</th>
+              <th>${ui('Subtítulo', 'Subtitle')}</th>
+              <th>${ui('Última atualização', 'Last update')}</th>
+              <th>Slug</th>
+            </tr>
+          </thead>
+          <tbody>${pages.length ? pageListRows(pages, { recent: true }) : `<tr><td colspan="4">${ui('Nenhuma página publicada.', 'No published pages.')}</td></tr>`}</tbody>
+        </table>
+      </article>
+    `
+  }
+
+  function categoriesIndexHtml(categories = []) {
+    return `
+      <article class="special-page special-page-categories">
+        <header class="article-header">
+          <h1>${ui('Categorias', 'Categories')}</h1>
+          <p class="article-subtitle">${ui('Índice das categorias com páginas publicadas em', 'Index of categories containing pages published in')} ${escapeHtml(runtime.config.site.name)}.</p>
+        </header>
+
+        <section class="category-grid">
+          ${categories.length ? categories.map(category => `
+            <a class="category-card" href="${categoryUrl(category.name)}" data-link="page" data-slug="categoria/${slugify(category.name)}">
+              <strong>${escapeHtml(category.name)}</strong>
+              <span>${Number(category.pageCount || 0).toLocaleString(runtime.locale())} ${ui('página(s)', 'page(s)')}</span>
+            </a>
+          `).join('') : `<p class="empty-state">${ui('Nenhuma categoria publicada.', 'No published categories.')}</p>`}
+        </section>
+      </article>
+    `
+  }
+
+  function categoryPageHtml(category) {
+    const page = {
+      slug: `categoria/${category.slug}`,
+      title: `${ui('Categoria', 'Category')}: ${category.name}`,
+      subtitle: ui('Páginas associadas a esta categoria.', 'Pages associated with this category.'),
+      categories: []
+    }
+
+    return `
+      <article class="special-page category-page">
+        <header class="article-header">
+          <h1>${ui('Categoria', 'Category')}: ${escapeHtml(category.name)}</h1>
+          <p class="article-subtitle">${ui('Páginas associadas a esta categoria.', 'Pages associated with this category.')}</p>
+        </header>
+
+        ${breadcrumbsHtml(page)}
+
+        <table class="history-table page-index-table">
+          <thead>
+            <tr>
+              <th>${ui('Título', 'Title')}</th>
+              <th>${ui('Subtítulo', 'Subtitle')}</th>
+              <th>Slug</th>
+            </tr>
+          </thead>
+          <tbody>${category.pages?.length ? pageListRows(category.pages) : `<tr><td colspan="3">${ui('Nenhuma página publicada nesta categoria.', 'No pages are published in this category.')}</td></tr>`}</tbody>
+        </table>
+      </article>
+    `
+  }
+
+  function searchHtml(query, results, user = { authenticated: false }) {
+    const cleanQuery = String(query || '').trim()
+    const slug = slugify(cleanQuery)
+    const canEdit = Boolean(user?.canEdit)
+    const canSuggest = runtime.featureEnabled('publicSuggestions')
+    const missingAction = canEdit
+      ? `<a class="primary-button" href="${runtime.pageUrl(slug, 'edit')}" data-link="edit" data-slug="${escapeHtml(slug)}">${ui('Criar página', 'Create page')}</a>`
+      : canSuggest
+        ? `<a class="primary-button" href="${runtime.pageUrl(slug, 'suggest')}" data-link="suggest" data-slug="${escapeHtml(slug)}">${ui('Sugerir agora', 'Suggest now')}</a>`
+        : ''
+    const missingText = canEdit
+      ? `${ui('A página', 'The page')} <code>${escapeHtml(cleanQuery)}</code> ${ui('não existe, mas você pode criá-la agora.', 'does not exist, but you can create it now.')}`
+      : canSuggest
+        ? `${ui('A página', 'The page')} <code>${escapeHtml(cleanQuery)}</code> ${ui('não existe, mas você pode sugeri-la agora.', 'does not exist, but you can suggest it now.')}`
+        : `${ui('A página', 'The page')} <code>${escapeHtml(cleanQuery)}</code> ${ui('não existe e sugestões públicas estão desativadas.', 'does not exist and public suggestions are disabled.')}`
+    const hasExact = results.some(page => page.exact || slugify(searchResultTitle(page)) === slug || String(page.slug || '') === slug)
+
+    return `
+      <header class="article-header">
+        <h1>${ui('Resultados da busca', 'Search results')}</h1>
+        <p class="article-subtitle">${ui('Pesquisa por', 'Search for')} “${escapeHtml(cleanQuery)}”.</p>
+      </header>
+
+      <section class="search-results">
+        ${results.length ? results.map(page => {
+          const title = searchResultTitle(page)
+          const subtitle = searchResultSubtitle(page)
+          return `
+            <article class="search-result">
+              <h2><a href="${runtime.pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${escapeHtml(title)}</a></h2>
+              <p>${safeSnippet(page.snippet || subtitle || '')}</p>
+              <small>${escapeHtml(page.exact ? `${ui('correspondência exata por', 'exact match by')} ${page.matchType || ui('resultado', 'result')}` : page.matchType || ui('resultado', 'result'))}${page.updatedAt ? ` · ${ui('atualizado em', 'updated on')} ${date(page.updatedAt)}` : ''}</small>
+            </article>
+          `
+        }).join('') : `<p class="empty-state">${ui('Nenhum resultado encontrado.', 'No results found.')}</p>`}
+        ${cleanQuery && !hasExact && (canEdit || canSuggest) ? `
+          <aside class="missing-search-page">
+            <p>${missingText}</p>
+            <div class="editor-actions">${missingAction}</div>
+          </aside>
+        ` : ''}
+      </section>
+    `
+  }
+
+  function accessRequiredHtml(slug, user = {}) {
+    return `
+      <article class="access-required-page">
+        <header class="article-header">
+          <h1>${ui('Edição restrita', 'Restricted editing')}</h1>
+          <p class="article-subtitle">${ui('A edição direta de páginas é reservada a e-mails autorizados pelo Cloudflare Access.', 'Direct page editing is restricted to email addresses authorized by Cloudflare Access.')}</p>
+        </header>
+
+        <div class="empty-state">
+          <p>${ui('Para editar diretamente, entre com um e-mail autorizado. Visitantes podem enviar uma proposta de alteração para análise editorial.', 'Sign in with an authorized email address to edit directly. Visitors may submit a proposed change for editorial review.')}</p>
+        </div>
+
+        <div class="editor-actions">
+          <a class="primary-button" href="${user.loginUrl || `/api/auth/login?return=${encodeURIComponent(runtime.pageUrl(slug, 'edit'))}`}">${ui('Entrar', 'Sign in')}</a>
+          <a class="secondary-button" href="${runtime.pageUrl(slug, 'suggest')}" data-link="suggest" data-slug="${escapeHtml(slug)}">${ui('Enviar proposta', 'Submit proposal')}</a>
+          <a class="secondary-button" href="${runtime.pageUrl(slug)}" data-link="page" data-slug="${escapeHtml(slug)}">${ui('Voltar ao artigo', 'Return to article')}</a>
+        </div>
+      </article>
+    `
+  }
+
+  function proposalSubmittedHtml(page, result) {
+    return `
+      <article class="proposal-result-page">
+        <header class="article-header">
+          <h1>${ui('Proposta enviada', 'Proposal submitted')}</h1>
+          <p class="article-subtitle">${ui('A alteração foi registrada para análise editorial.', 'The change was recorded for editorial review.')}</p>
+        </header>
+
+        <div class="empty-state">
+          <p>${ui('A proposta referente a', 'The proposal for')} <strong>${escapeHtml(page.title)}</strong> ${ui('foi recebida.', 'was received.')}</p>
+          <p>${ui('Identificador', 'Identifier')}: <code>${escapeHtml(result?.proposal?.id || ui('indisponível', 'unavailable'))}</code></p>
+        </div>
+
+        <div class="editor-actions">
+          <a class="primary-button" href="${runtime.pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui('Voltar ao artigo', 'Return to article')}</a>
+        </div>
+      </article>
+    `
+  }
+
+
+  function filePageHtml(file) {
+    const pseudoPage = {
+      slug: `arquivo/${file.slug}`,
+      title: `${ui("Arquivo:", "File:")}${file.filename}`,
+      subtitle: `${ui("Arquivo armazenado no acervo de ", "File stored in the library of ")}${runtime.config.site.name}.`,
+      categories: [ui("Arquivo", "File")]
+    }
+
+    const isImage = String(file.mimeType || '').startsWith('image/')
+    const isVideo = String(file.mimeType || '').startsWith('video/')
+    const isAudio = String(file.mimeType || '').startsWith('audio/')
+    const imagePreview = isImage
+      ? `
+        <figure class="file-preview">
+          <img loading="lazy" decoding="async" src="${escapeHtml(file.contentUrl)}" alt="${escapeHtml(file.description || file.filename)}" ${mediaAttrsForFile(file)} />
+          ${file.description ? `<figcaption>${escapeHtml(file.description)}</figcaption>` : ''}
+        </figure>
+      `
+      : isVideo
+        ? `
+          <figure class="file-preview">
+            <video src="${escapeHtml(file.contentUrl)}" controls preload="metadata" ${mediaAttrsForFile(file)}></video>
+            ${file.description ? `<figcaption>${escapeHtml(file.description)}</figcaption>` : ''}
+          </figure>
         `
-      }).join('') : `<p class="empty-state">${ui('Nenhum resultado encontrado.', 'No results found.')}</p>`}
-      ${cleanQuery && !hasExact && (canEdit || canSuggest) ? `
-        <aside class="missing-search-page">
-          <p>${missingText}</p>
-          <div class="editor-actions">${missingAction}</div>
-        </aside>
-      ` : ''}
-    </section>
-  `
+        : isAudio
+          ? `
+            <figure class="file-preview">
+              <audio src="${escapeHtml(file.contentUrl)}" controls preload="metadata" ${mediaAttrsForFile(file)}></audio>
+              ${file.description ? `<figcaption>${escapeHtml(file.description)}</figcaption>` : ''}
+            </figure>
+          `
+          : `<p class="empty-state">${ui("Este arquivo não possui pré-visualização disponível.", "No preview is available for this file.")}</p>`
+
+    const imageBlock = isVideo
+      ? `:::video
+  src: ${file.contentUrl}
+  title: ${file.filename}
+  caption: ${file.description || file.filename}
+  details: ${fileDetailsUrl(file)}
+  :::`
+      : isAudio
+        ? `:::audio
+  src: ${file.contentUrl}
+  title: ${file.filename}
+  caption: ${file.description || file.filename}
+  details: ${fileDetailsUrl(file)}
+  :::`
+        : `:::thumb
+  src: ${file.contentUrl}
+  alt: ${file.filename}
+  caption: ${file.description || file.filename}
+  details: ${fileDetailsUrl(file)}
+  align: right
+  width: 260
+  :::`
+
+    return `
+      <article class="wiki-article file-page">
+        <header class="article-header">
+          <h1>${ui("Arquivo:", "File:")}${escapeHtml(file.filename)}</h1>
+          <p class="article-subtitle">${ui("Arquivo armazenado no acervo de ", "File stored in the library of ")}${escapeHtml(runtime.config.site.name)}.</p>
+        </header>
+
+        ${breadcrumbsHtml(pseudoPage)}
+
+        ${imagePreview}
+
+        <table class="history-table file-meta-table">
+          <tbody>
+            <tr><th>${ui("Nome", "Name")}</th><td>${escapeHtml(file.filename)}</td></tr>
+            <tr><th>${ui("Tipo MIME", "MIME type")}</th><td>${escapeHtml(file.mimeType)}</td></tr>
+            <tr><th>${ui("Tamanho", "Size")}</th><td>${formatBytes(file.sizeBytes, runtime.locale())}</td></tr>
+            <tr><th>${ui("Enviado por", "Uploaded by")}</th><td>${escapeHtml(file.uploadedByName || ui("editor não identificado", "unknown editor"))}</td></tr>
+            <tr><th>${ui("Data de envio", "Upload date")}</th><td>${date(file.createdAt)}</td></tr>
+            ${file.sha256 ? `<tr><th>SHA-256</th><td><code>${escapeHtml(file.sha256)}</code></td></tr>` : ''}
+          </tbody>
+        </table>
+
+        <section class="file-usage-box">
+          <h2>${ui("Uso em artigos", "Article usage")}</h2>
+          <p>${ui("Para inserir este arquivo em um artigo, utilize o bloco abaixo.", "Use the following block to insert this file in an article.")}</p>
+          <pre><code>${escapeHtml(imageBlock)}</code></pre>
+          <p><a href="${escapeHtml(file.contentUrl)}" rel="noreferrer">${ui("Abrir arquivo original", "Open original file")}</a></p>
+        </section>
+      </article>
+    `
+  }
+
+  function fileUploadPageHtml(fileSlug, user = {}) {
+    const cleanSlug = String(fileSlug || 'novo-arquivo').replace(/^arquivo\//, '')
+    return `
+      <article class="special-page file-upload-special">
+        <header class="article-header">
+          <h1>${ui("Enviar arquivo", "Upload file")}</h1>
+          <p class="article-subtitle">${ui("Crie", "Create")} <code>/wiki/arquivo/${escapeHtml(cleanSlug)}</code>${ui(" enviando uma imagem, um vídeo ou um áudio para o acervo.", " by uploading an image, video or audio file.")}</p>
+        </header>
+
+        <section class="file-upload-card">
+          <p>${ui("O namespace", "The namespace")} <code>/wiki/arquivo/</code>${ui(" não aceita artigos em Markdown. Ele é reservado para objetos de mídia armazenados no R2 e registrados no D1.", " is reserved for media objects stored in R2 and registered in D1.")}</p>
+          ${user?.canEdit ? `
+            <form data-file-upload-form>
+              <div class="file-upload-grid">
+                <label>
+                  ${ui("URL do arquivo", "File URL")}
+                  <span class="editor-url-control"><span class="editor-url-prefix">/wiki/arquivo/</span><input name="slug" value="${escapeHtml(cleanSlug)}" required autocomplete="off" /></span>
+                </label>
+                <label>
+                  ${ui("Arquivo", "File")}
+                  <input type="file" name="file" accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/flac,audio/aac,audio/mp4,.m4a,.mov,.m4v,.ogv,.oga" required />
+                </label>
+                <label>
+                  ${ui("Descrição ou legenda", "Description or caption")}
+                  <input type="text" name="description" maxlength="500" placeholder="${ui("descrição curta da mídia", "short media description")}" />
+                </label>
+              </div>
+              <div class="editor-actions">
+                <button class="primary-button" type="submit">${ui("Enviar arquivo", "Upload file")}</button>
+                <a class="secondary-button" href="/admin/storage" data-link="route">${ui("Abrir armazenamento", "Open storage")}</a>
+                <a class="secondary-button" href="/" data-link="home">${ui("Cancelar", "Cancel")}</a>
+              </div>
+              <p class="editor-note" data-file-upload-note>${ui("São aceitas imagens, vídeos e áudios válidos de até 50 MB.", "Valid images, videos and audio files up to 50 MB are accepted.")}</p>
+            </form>
+          ` : `
+            <div class="empty-state">
+              <p>${ui("O upload é restrito a editores, moderadores e administradores autenticados pelo Cloudflare Access.", "Uploads require an editor, moderator or administrator authenticated through Cloudflare Access.")}</p>
+            </div>
+            <div class="editor-actions">
+              <a class="primary-button" href="${escapeHtml(user?.loginUrl || `/api/auth/login?return=${encodeURIComponent(runtime.pageUrl(`arquivo/${cleanSlug}`))}`)}">${ui("Entrar", "Sign in")}</a>
+              <a class="secondary-button" href="/" data-link="home">${ui("Voltar à página principal", "Back to main page")}</a>
+            </div>
+          `}
+        </section>
+      </article>
+    `
+  }
+
+  function fileNamespaceBlockedHtml(slug, user = {}) {
+    const clean = String(slug || '').replace(/^arquivo\//, '')
+    return `
+      <article class="access-required-page">
+        <header class="article-header">
+          <h1>${ui("Namespace de arquivo", "File namespace")}</h1>
+          <p class="article-subtitle">${ui("Páginas de arquivo não usam o editor de artigos nem aceitam propostas em Markdown.", "File pages use the media system and do not accept Markdown edit proposals.")}</p>
+        </header>
+        <div class="empty-state">
+          <p>${ui("Use a página especial de upload para registrar ", "Use the upload page to register ")}<code>/wiki/arquivo/${escapeHtml(clean)}</code>.</p>
+        </div>
+        <div class="editor-actions">
+          ${runtime.featureEnabled('mediaUploads') ? `<a class="primary-button" href="${runtime.pageUrl(`arquivo/${clean}`)}" data-link="page" data-slug="arquivo/${escapeHtml(clean)}">${ui("Abrir uploader", "Open uploader")}</a>` : ''}
+          ${!user?.canEdit ? `<a class="secondary-button" href="${escapeHtml(user?.loginUrl || `/api/auth/login?return=${encodeURIComponent(runtime.pageUrl(`arquivo/${clean}`))}`)}">${ui("Entrar", "Sign in")}</a>` : ''}
+          <a class="secondary-button" href="/" data-link="home">${ui("Voltar à página principal", "Back to main page")}</a>
+        </div>
+      </article>
+    `
+  }
+
+  function versionPageHtml(status = {}) {
+    const coreVersion = status?.coreVersion || runtime.version
+    return `
+      <article class="special-page version-page">
+        <header class="article-header">
+          <h1>WikiCambada Core — ${ui('Versão', 'Version')}</h1>
+        </header>
+        <div class="version-facts">
+          <div class="version-fact"><strong>${ui('Versão do Core', 'Core version')}</strong><span>${escapeHtml(coreVersion)}</span></div>
+        </div>
+      </article>
+    `
+  }
+
+  function featureDisabledHtml(title, description = '') {
+    return `
+      <article class="wiki-article special-page">
+        <header class="article-header">
+          <h1>${escapeHtml(title)}</h1>
+          <p class="article-subtitle">${ui('Este recurso foi desativado nas configurações globais desta instalação.', 'This feature was disabled in the global settings for this installation.')}</p>
+        </header>
+        ${description ? `<p>${escapeHtml(description)}</p>` : ''}
+        <p><a href="${runtime.pageUrl(runtime.config.site.homeSlug)}" data-link="home">${ui('Voltar à página principal', 'Return to the main page')}</a></p>
+      </article>
+    `
+  }
+
+  function specialPagesIndexHtml() {
+    const pages = [
+      ['specialPages.allPages', ui('Todas as páginas', 'All pages'), ui('Lista alfabética de páginas publicadas.', 'Alphabetical list of published pages.'), 'especial/todas-as-paginas'],
+      ['specialPages.recentPages', ui('Páginas recentes', 'Recent pages'), ui('Páginas ordenadas pela revisão mais recente.', 'Pages ordered by their latest revision.'), 'especial/paginas-recentes'],
+      ['specialPages.categories', ui('Categorias', 'Categories'), ui('Índice das categorias registradas.', 'Index of registered categories.'), 'especial/categorias'],
+      ['specialPages.randomPage', ui('Página aleatória', 'Random page'), ui('Abre uma página publicada aleatória.', 'Opens a random published page.'), 'especial/pagina-aleatoria'],
+      ['specialPages.version', ui('Versão', 'Version'), ui('Versão do WikiCambada Core e estado do sistema.', 'WikiCambada Core version and system status.'), 'especial/versao']
+    ].filter(([feature]) => {
+      if (!runtime.featureEnabled(feature)) return false
+      if (feature === 'specialPages.categories') return runtime.featureEnabled('categories')
+      if (feature === 'specialPages.randomPage') return runtime.featureEnabled('randomPage')
+      return true
+    })
+
+    return `
+      <article class="wiki-article special-page">
+        <header class="article-header">
+          <h1>${ui('Especial: Páginas especiais', 'Special: Special pages')}</h1>
+          <p class="article-subtitle">${ui('Recursos gerados pelo WikiCambada Core para esta instalação.', 'Resources generated by WikiCambada Core for this installation.')}</p>
+        </header>
+        <div class="special-page-grid">
+          ${pages.length ? pages.map(([, title, description, slug]) => `
+            <a class="special-page-card" href="${runtime.pageUrl(slug)}" data-link="page" data-slug="${escapeHtml(slug)}">
+              <strong>${escapeHtml(title)}</strong>
+              <span>${escapeHtml(description)}</span>
+            </a>
+          `).join('') : `<p class="empty-state">${ui('Nenhuma página especial está habilitada.', 'No special pages are enabled.')}</p>`}
+        </div>
+      </article>
+    `
+  }
+
+
+  return {
+    infoboxHtml, categoryUrl, categoriesHtml, footerHtml, articleHtml, editorPreviewHtml, notFoundHtml, historyHtml, revisionHtml, revisionCompareHtml, allPagesHtml, recentPagesHtml, categoriesIndexHtml, categoryPageHtml, searchHtml, accessRequiredHtml, proposalSubmittedHtml, filePageHtml, fileUploadPageHtml, fileNamespaceBlockedHtml, versionPageHtml, featureDisabledHtml, specialPagesIndexHtml
+  }
 }
 
-export function accessRequiredHtml(slug, user = {}) {
-  return `
-    <article class="access-required-page">
-      <header class="article-header">
-        <h1>${ui('Edição restrita', 'Restricted editing')}</h1>
-        <p class="article-subtitle">${ui('A edição direta de páginas é reservada a e-mails autorizados pelo Cloudflare Access.', 'Direct page editing is restricted to email addresses authorized by Cloudflare Access.')}</p>
-      </header>
-
-      <div class="empty-state">
-        <p>${ui('Para editar diretamente, entre com um e-mail autorizado. Visitantes podem enviar uma proposta de alteração para análise editorial.', 'Sign in with an authorized email address to edit directly. Visitors may submit a proposed change for editorial review.')}</p>
-      </div>
-
-      <div class="editor-actions">
-        <a class="primary-button" href="${user.loginUrl || `/api/auth/login?return=${encodeURIComponent(pageUrl(slug, 'edit'))}`}">${ui('Entrar', 'Sign in')}</a>
-        <a class="secondary-button" href="${pageUrl(slug, 'suggest')}" data-link="suggest" data-slug="${escapeHtml(slug)}">${ui('Enviar proposta', 'Submit proposal')}</a>
-        <a class="secondary-button" href="${pageUrl(slug)}" data-link="page" data-slug="${escapeHtml(slug)}">${ui('Voltar ao artigo', 'Return to article')}</a>
-      </div>
-    </article>
-  `
-}
-
-export function proposalSubmittedHtml(page, result) {
-  return `
-    <article class="proposal-result-page">
-      <header class="article-header">
-        <h1>${ui('Proposta enviada', 'Proposal submitted')}</h1>
-        <p class="article-subtitle">${ui('A alteração foi registrada para análise editorial.', 'The change was recorded for editorial review.')}</p>
-      </header>
-
-      <div class="empty-state">
-        <p>${ui('A proposta referente a', 'The proposal for')} <strong>${escapeHtml(page.title)}</strong> ${ui('foi recebida.', 'was received.')}</p>
-        <p>${ui('Identificador', 'Identifier')}: <code>${escapeHtml(result?.proposal?.id || ui('indisponível', 'unavailable'))}</code></p>
-      </div>
-
-      <div class="editor-actions">
-        <a class="primary-button" href="${pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${ui('Voltar ao artigo', 'Return to article')}</a>
-      </div>
-    </article>
-  `
-}
+export const {
+  infoboxHtml, categoryUrl, categoriesHtml, footerHtml, articleHtml, editorPreviewHtml, notFoundHtml, historyHtml, revisionHtml, revisionCompareHtml, allPagesHtml, recentPagesHtml, categoriesIndexHtml, categoryPageHtml, searchHtml, accessRequiredHtml, proposalSubmittedHtml, filePageHtml, fileUploadPageHtml, fileNamespaceBlockedHtml, versionPageHtml, featureDisabledHtml, specialPagesIndexHtml
+} = createWikiRenderer(browserRenderRuntime)
 
 export function adminProposalsHtml(data, selectedId = '') {
   const proposals = data?.proposals || []
@@ -781,185 +1022,6 @@ export function fatalErrorHtml(error = {}) {
     <div class="empty-state">
       <p>${ui('Tente recarregar a página.', 'Try reloading the page.')}</p>
     </div>
-  `
-}
-
-function formatBytes(bytes = 0) {
-  const value = Number(bytes || 0)
-  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toLocaleString(interfaceLocale(), { maximumFractionDigits: 1 })} MB`
-  if (value >= 1024) return `${(value / 1024).toLocaleString(interfaceLocale(), { maximumFractionDigits: 1 })} KB`
-  return `${value.toLocaleString(interfaceLocale())} bytes`
-}
-
-export function filePageHtml(file) {
-  const pseudoPage = {
-    slug: `arquivo/${file.slug}`,
-    title: `${ui("Arquivo:", "File:")}${file.filename}`,
-    subtitle: `${ui("Arquivo armazenado no acervo de ", "File stored in the library of ")}${SITE_NAME}.`,
-    categories: [ui("Arquivo", "File")]
-  }
-
-  const isImage = String(file.mimeType || '').startsWith('image/')
-  const isVideo = String(file.mimeType || '').startsWith('video/')
-  const isAudio = String(file.mimeType || '').startsWith('audio/')
-  const imagePreview = isImage
-    ? `
-      <figure class="file-preview">
-        <img loading="lazy" decoding="async" src="${escapeHtml(file.contentUrl)}" alt="${escapeHtml(file.description || file.filename)}" ${mediaAttrsForFile(file)} />
-        ${file.description ? `<figcaption>${escapeHtml(file.description)}</figcaption>` : ''}
-      </figure>
-    `
-    : isVideo
-      ? `
-        <figure class="file-preview">
-          <video src="${escapeHtml(file.contentUrl)}" controls preload="metadata" ${mediaAttrsForFile(file)}></video>
-          ${file.description ? `<figcaption>${escapeHtml(file.description)}</figcaption>` : ''}
-        </figure>
-      `
-      : isAudio
-        ? `
-          <figure class="file-preview">
-            <audio src="${escapeHtml(file.contentUrl)}" controls preload="metadata" ${mediaAttrsForFile(file)}></audio>
-            ${file.description ? `<figcaption>${escapeHtml(file.description)}</figcaption>` : ''}
-          </figure>
-        `
-        : `<p class="empty-state">${ui("Este arquivo não possui pré-visualização disponível.", "No preview is available for this file.")}</p>`
-
-  const imageBlock = isVideo
-    ? `:::video
-src: ${file.contentUrl}
-title: ${file.filename}
-caption: ${file.description || file.filename}
-details: ${fileDetailsUrl(file)}
-:::`
-    : isAudio
-      ? `:::audio
-src: ${file.contentUrl}
-title: ${file.filename}
-caption: ${file.description || file.filename}
-details: ${fileDetailsUrl(file)}
-:::`
-      : `:::thumb
-src: ${file.contentUrl}
-alt: ${file.filename}
-caption: ${file.description || file.filename}
-details: ${fileDetailsUrl(file)}
-align: right
-width: 260
-:::`
-
-  return `
-    <article class="wiki-article file-page">
-      <header class="article-header">
-        <h1>${ui("Arquivo:", "File:")}${escapeHtml(file.filename)}</h1>
-        <p class="article-subtitle">${ui("Arquivo armazenado no acervo de ", "File stored in the library of ")}${escapeHtml(SITE_NAME)}.</p>
-      </header>
-
-      ${breadcrumbsHtml(pseudoPage)}
-
-      ${imagePreview}
-
-      <table class="history-table file-meta-table">
-        <tbody>
-          <tr><th>${ui("Nome", "Name")}</th><td>${escapeHtml(file.filename)}</td></tr>
-          <tr><th>${ui("Tipo MIME", "MIME type")}</th><td>${escapeHtml(file.mimeType)}</td></tr>
-          <tr><th>${ui("Tamanho", "Size")}</th><td>${formatBytes(file.sizeBytes)}</td></tr>
-          <tr><th>${ui("Enviado por", "Uploaded by")}</th><td>${escapeHtml(file.uploadedByName || ui("editor não identificado", "unknown editor"))}</td></tr>
-          <tr><th>${ui("Data de envio", "Upload date")}</th><td>${formatDate(file.createdAt)}</td></tr>
-          ${file.sha256 ? `<tr><th>SHA-256</th><td><code>${escapeHtml(file.sha256)}</code></td></tr>` : ''}
-          <tr><th>${ui("Chave R2", "R2 key")}</th><td><code>${escapeHtml(file.r2Key)}</code></td></tr>
-        </tbody>
-      </table>
-
-      <section class="file-usage-box">
-        <h2>${ui("Uso em artigos", "Article usage")}</h2>
-        <p>${ui("Para inserir este arquivo em um artigo, utilize o bloco abaixo.", "Use the following block to insert this file in an article.")}</p>
-        <pre><code>${escapeHtml(imageBlock)}</code></pre>
-        <p><a href="${escapeHtml(file.contentUrl)}" rel="noreferrer">${ui("Abrir arquivo original", "Open original file")}</a></p>
-      </section>
-    </article>
-  `
-}
-
-export function fileUploadPageHtml(fileSlug, user = {}) {
-  const cleanSlug = String(fileSlug || 'novo-arquivo').replace(/^arquivo\//, '')
-  return `
-    <article class="special-page file-upload-special">
-      <header class="article-header">
-        <h1>${ui("Enviar arquivo", "Upload file")}</h1>
-        <p class="article-subtitle">${ui("Crie", "Create")} <code>/wiki/arquivo/${escapeHtml(cleanSlug)}</code>${ui(" enviando uma imagem, um vídeo ou um áudio para o acervo.", " by uploading an image, video or audio file.")}</p>
-      </header>
-
-      <section class="file-upload-card">
-        <p>${ui("O namespace", "The namespace")} <code>/wiki/arquivo/</code>${ui(" não aceita artigos em Markdown. Ele é reservado para objetos de mídia armazenados no R2 e registrados no D1.", " is reserved for media objects stored in R2 and registered in D1.")}</p>
-        ${user?.canEdit ? `
-          <form data-file-upload-form>
-            <div class="file-upload-grid">
-              <label>
-                ${ui("URL do arquivo", "File URL")}
-                <span class="editor-url-control"><span class="editor-url-prefix">/wiki/arquivo/</span><input name="slug" value="${escapeHtml(cleanSlug)}" required autocomplete="off" /></span>
-              </label>
-              <label>
-                ${ui("Arquivo", "File")}
-                <input type="file" name="file" accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/flac,audio/aac,audio/mp4,.m4a,.mov,.m4v,.ogv,.oga" required />
-              </label>
-              <label>
-                ${ui("Descrição ou legenda", "Description or caption")}
-                <input type="text" name="description" maxlength="500" placeholder="${ui("descrição curta da mídia", "short media description")}" />
-              </label>
-            </div>
-            <div class="editor-actions">
-              <button class="primary-button" type="submit">${ui("Enviar arquivo", "Upload file")}</button>
-              <a class="secondary-button" href="/admin/storage" data-link="route">${ui("Abrir armazenamento", "Open storage")}</a>
-              <a class="secondary-button" href="/" data-link="home">${ui("Cancelar", "Cancel")}</a>
-            </div>
-            <p class="editor-note" data-file-upload-note>${ui("São aceitas imagens, vídeos e áudios válidos de até 50 MB.", "Valid images, videos and audio files up to 50 MB are accepted.")}</p>
-          </form>
-        ` : `
-          <div class="empty-state">
-            <p>${ui("O upload é restrito a editores, moderadores e administradores autenticados pelo Cloudflare Access.", "Uploads require an editor, moderator or administrator authenticated through Cloudflare Access.")}</p>
-          </div>
-          <div class="editor-actions">
-            <a class="primary-button" href="${escapeHtml(user?.loginUrl || `/api/auth/login?return=${encodeURIComponent(pageUrl(`arquivo/${cleanSlug}`))}`)}">${ui("Entrar", "Sign in")}</a>
-            <a class="secondary-button" href="/" data-link="home">${ui("Voltar à página principal", "Back to main page")}</a>
-          </div>
-        `}
-      </section>
-    </article>
-  `
-}
-
-export function fileNamespaceBlockedHtml(slug, user = {}) {
-  const clean = String(slug || '').replace(/^arquivo\//, '')
-  return `
-    <article class="access-required-page">
-      <header class="article-header">
-        <h1>${ui("Namespace de arquivo", "File namespace")}</h1>
-        <p class="article-subtitle">${ui("Páginas de arquivo não usam o editor de artigos nem aceitam propostas em Markdown.", "File pages use the media system and do not accept Markdown edit proposals.")}</p>
-      </header>
-      <div class="empty-state">
-        <p>${ui("Use a página especial de upload para registrar ", "Use the upload page to register ")}<code>/wiki/arquivo/${escapeHtml(clean)}</code>.</p>
-      </div>
-      <div class="editor-actions">
-        ${featureEnabled('mediaUploads') ? `<a class="primary-button" href="${pageUrl(`arquivo/${clean}`)}" data-link="page" data-slug="arquivo/${escapeHtml(clean)}">${ui("Abrir uploader", "Open uploader")}</a>` : ''}
-        ${!user?.canEdit ? `<a class="secondary-button" href="${escapeHtml(user?.loginUrl || `/api/auth/login?return=${encodeURIComponent(pageUrl(`arquivo/${clean}`))}`)}">${ui("Entrar", "Sign in")}</a>` : ''}
-        <a class="secondary-button" href="/" data-link="home">${ui("Voltar à página principal", "Back to main page")}</a>
-      </div>
-    </article>
-  `
-}
-
-export function versionPageHtml(status = {}) {
-  const coreVersion = status?.coreVersion || APP_VERSION
-  return `
-    <article class="special-page version-page">
-      <header class="article-header">
-        <h1>WikiCambada Core — ${ui('Versão', 'Version')}</h1>
-      </header>
-      <div class="version-facts">
-        <div class="version-fact"><strong>${ui('Versão do Core', 'Core version')}</strong><span>${escapeHtml(coreVersion)}</span></div>
-      </div>
-    </article>
   `
 }
 
@@ -1119,8 +1181,6 @@ function adminNavHtml(active = 'overview') {
     </nav>
   `
 }
-
-
 
 function templateStatusLabel(template) {
   return template.status === 'disabled' ? 'bloqueado' : 'ativo'
@@ -1920,52 +1980,6 @@ export function adminSystemHtml(status = {}) {
         </div>
         <p class="editor-note" data-system-note>${ui("Clientes abertos verificam essas versões periodicamente.", "Open clients check these versions periodically.")}</p>
       </section>
-    </article>
-  `
-}
-
-
-export function featureDisabledHtml(title, description = '') {
-  return `
-    <article class="wiki-article special-page">
-      <header class="article-header">
-        <h1>${escapeHtml(title)}</h1>
-        <p class="article-subtitle">${ui('Este recurso foi desativado nas configurações globais desta instalação.', 'This feature was disabled in the global settings for this installation.')}</p>
-      </header>
-      ${description ? `<p>${escapeHtml(description)}</p>` : ''}
-      <p><a href="${pageUrl(HOME_SLUG)}" data-link="home">${ui('Voltar à página principal', 'Return to the main page')}</a></p>
-    </article>
-  `
-}
-
-export function specialPagesIndexHtml() {
-  const pages = [
-    ['specialPages.allPages', ui('Todas as páginas', 'All pages'), ui('Lista alfabética de páginas publicadas.', 'Alphabetical list of published pages.'), 'especial/todas-as-paginas'],
-    ['specialPages.recentPages', ui('Páginas recentes', 'Recent pages'), ui('Páginas ordenadas pela revisão mais recente.', 'Pages ordered by their latest revision.'), 'especial/paginas-recentes'],
-    ['specialPages.categories', ui('Categorias', 'Categories'), ui('Índice das categorias registradas.', 'Index of registered categories.'), 'especial/categorias'],
-    ['specialPages.randomPage', ui('Página aleatória', 'Random page'), ui('Abre uma página publicada aleatória.', 'Opens a random published page.'), 'especial/pagina-aleatoria'],
-    ['specialPages.version', ui('Versão', 'Version'), ui('Versão do WikiCambada Core e estado do sistema.', 'WikiCambada Core version and system status.'), 'especial/versao']
-  ].filter(([feature]) => {
-    if (!featureEnabled(feature)) return false
-    if (feature === 'specialPages.categories') return featureEnabled('categories')
-    if (feature === 'specialPages.randomPage') return featureEnabled('randomPage')
-    return true
-  })
-
-  return `
-    <article class="wiki-article special-page">
-      <header class="article-header">
-        <h1>${ui('Especial: Páginas especiais', 'Special: Special pages')}</h1>
-        <p class="article-subtitle">${ui('Recursos gerados pelo WikiCambada Core para esta instalação.', 'Resources generated by WikiCambada Core for this installation.')}</p>
-      </header>
-      <div class="special-page-grid">
-        ${pages.length ? pages.map(([, title, description, slug]) => `
-          <a class="special-page-card" href="${pageUrl(slug)}" data-link="page" data-slug="${escapeHtml(slug)}">
-            <strong>${escapeHtml(title)}</strong>
-            <span>${escapeHtml(description)}</span>
-          </a>
-        `).join('') : `<p class="empty-state">${ui('Nenhuma página especial está habilitada.', 'No special pages are enabled.')}</p>`}
-      </div>
     </article>
   `
 }

@@ -37,7 +37,7 @@ export async function onRequestGet({ env }: Context) {
     ok,
     app: env.WIKI_SITE_NAME || 'WikiCambada Core',
     core: 'WikiCambada Core',
-    version: env.WIKI_CORE_VERSION || 'v1.1.0-r2',
+    version: env.WIKI_CORE_VERSION || 'v1.1.1-indev.1',
     database: Boolean(env.DB),
     uploads: Boolean(env.WIKI_BUCKET),
     databaseReachable,

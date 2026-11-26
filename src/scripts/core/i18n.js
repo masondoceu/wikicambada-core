@@ -166,7 +166,11 @@ export function interfaceLocale() {
 }
 
 export function t(key, values = {}) {
-  const template = messages[activeLanguage]?.[key] ?? messages['pt-BR']?.[key] ?? key
+  return translate(activeLanguage, key, values)
+}
+
+export function translate(language, key, values = {}) {
+  const template = messages[language]?.[key] ?? messages['pt-BR']?.[key] ?? key
   return Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{{${name}}}`, String(value ?? '')), template)
 }
 

@@ -1,3 +1,4 @@
+import { exactSearchResult, isGeneratedSpecialSlug, searchTitleForMatch, specialFeature, specialPageInfo, specialPageSlugs } from './wiki-special.js'
 import { DEFAULT_RANDOM_SLUGS, HOME_SLUG, SLOGAN, SITE_CONFIG, SITE_NAME, featureEnabled, loadGlobalSettings } from '../core/config.js'
 import { interfaceLanguage, interfaceLocale, t } from '../core/i18n.js'
 import { articleSlugFromTalk, escapeHtml, normalizeKey, pageUrl, parseRoute, searchUrl, slugify, titleFromSlug } from '../core/utils.js'
@@ -8,49 +9,6 @@ import { accessRequiredHtml, adminActivityHtml, adminBackupHtml, adminDashboardH
 const ui = (portuguese, english) => interfaceLanguage() === 'en' ? english : portuguese
 
 export function createWikiRouter({ app, searchForm, searchInput }) {
-
-  const SPECIAL_PAGE_ALIASES = new Map([
-    ['especial', { key: 'index', canonical: 'especial' }],
-    ['especial/paginas-especiais', { key: 'index', canonical: 'especial' }],
-    ['special', { key: 'index', canonical: 'especial' }],
-    ['special/special-pages', { key: 'index', canonical: 'especial' }],
-    ['todas-as-paginas', { key: 'allPages', canonical: 'especial/todas-as-paginas' }],
-    ['especial/todas-as-paginas', { key: 'allPages', canonical: 'especial/todas-as-paginas' }],
-    ['special/all-pages', { key: 'allPages', canonical: 'especial/todas-as-paginas' }],
-    ['paginas-recentes', { key: 'recentPages', canonical: 'especial/paginas-recentes' }],
-    ['especial/paginas-recentes', { key: 'recentPages', canonical: 'especial/paginas-recentes' }],
-    ['special/recent-pages', { key: 'recentPages', canonical: 'especial/paginas-recentes' }],
-    ['categorias', { key: 'categories', canonical: 'especial/categorias' }],
-    ['especial/categorias', { key: 'categories', canonical: 'especial/categorias' }],
-    ['special/categories', { key: 'categories', canonical: 'especial/categorias' }],
-    ['pagina-aleatoria', { key: 'randomPage', canonical: 'especial/pagina-aleatoria' }],
-    ['especial/pagina-aleatoria', { key: 'randomPage', canonical: 'especial/pagina-aleatoria' }],
-    ['special/random-page', { key: 'randomPage', canonical: 'especial/pagina-aleatoria' }],
-    ['version', { key: 'version', canonical: 'especial/versao' }],
-    ['versao', { key: 'version', canonical: 'especial/versao' }],
-    ['especial/versao', { key: 'version', canonical: 'especial/versao' }],
-    ['especial/version', { key: 'version', canonical: 'especial/versao' }],
-    ['special/version', { key: 'version', canonical: 'especial/versao' }]
-  ])
-
-  function specialPageInfo(slug) {
-    return SPECIAL_PAGE_ALIASES.get(String(slug || '').trim().toLowerCase()) || null
-  }
-
-  function isGeneratedSpecialSlug(slug) {
-    return Boolean(specialPageInfo(slug)) || String(slug || '').toLowerCase().startsWith('especial/') || String(slug || '').toLowerCase().startsWith('special/')
-  }
-
-  function specialFeature(info) {
-    if (!info) return null
-    if (info.key === 'index') return 'specialPages.index'
-    if (info.key === 'allPages') return 'specialPages.allPages'
-    if (info.key === 'recentPages') return 'specialPages.recentPages'
-    if (info.key === 'categories') return 'specialPages.categories'
-    if (info.key === 'randomPage') return 'specialPages.randomPage'
-    if (info.key === 'version') return 'specialPages.version'
-    return null
-  }
 
   function pageVisibleByFeatures(pageOrSlug) {
     const slug = String(typeof pageOrSlug === 'string' ? pageOrSlug : pageOrSlug?.slug || '').trim().toLowerCase()
@@ -239,7 +197,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
   }
 
   function collectKnownSlugs(pages) {
-    const slugs = new Set([...SPECIAL_PAGE_ALIASES.keys(), ...[...SPECIAL_PAGE_ALIASES.values()].map(item => item.canonical)])
+    const slugs = new Set(specialPageSlugs())
     for (const page of pages || []) {
       if (page.slug) slugs.add(page.slug)
       for (const alias of page.aliases || []) {
@@ -2401,28 +2359,6 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     })
   }
 
-  function searchTitleForMatch(page) {
-    const title = String(page?.title || page?.displayTitle || page?.matchedTitle || '').trim()
-    if (title) return title
-    const slug = String(page?.slug || page?.matchedSlug || '').split('/').filter(Boolean).pop() || ''
-    return titleFromSlug(slug)
-  }
-
-  function exactSearchResult(query, results = []) {
-    const clean = String(query || '').trim()
-    if (!clean) return null
-    const expectedSlug = slugify(clean)
-    return results.find(page => {
-      if (!page?.slug) return false
-      if (page.exact) return true
-      const title = slugify(searchTitleForMatch(page))
-      const slug = String(page.slug || '').trim().toLowerCase()
-      const matchedTitle = slugify(page.matchedTitle || '')
-      const matchedSlug = slugify(page.matchedSlug || '')
-      return title === expectedSlug || slug === expectedSlug || matchedTitle === expectedSlug || matchedSlug === expectedSlug
-    }) || null
-  }
-
   async function renderSearch(query, serial, offset = 0) {
     updateChrome(currentState().slug, currentState().mode)
     setDocumentTitle({ title: ui(`Busca por ${query}`, `Search for ${query}`) })
@@ -2452,7 +2388,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
   }
 
 
-  async function renderSpecialPage(info, serial) {
+  async function renderSpecialPage(info, serial, offset = 0) {
     const feature = specialFeature(info)
     canonicalizeSpecialRoute(info)
     updateChrome(info.canonical, 'read')
@@ -2469,7 +2405,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       commitHtml(serial, specialPagesIndexHtml())
       return
     }
-    if (info.key === 'allPages') return renderAllPages(serial)
+    if (info.key === 'allPages') return renderAllPages(serial, offset)
     if (info.key === 'recentPages') return renderRecentPages(serial)
     if (info.key === 'categories') return renderCategories(serial)
     if (info.key === 'randomPage') {
@@ -2775,6 +2711,8 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
     try {
       const state = currentState()
+      const position = Number(new URLSearchParams(window.location.search).get('offset'))
+      const offset = Number.isSafeInteger(position) && position > 0 ? Math.min(position, 1000000) : 0
 
       if (state.mode === 'search' && !featureEnabled('search')) {
         setDocumentTitle({ title: ui('Busca desativada', 'Search disabled') })
@@ -2783,13 +2721,13 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       }
 
       if (state.mode === 'search') {
-        await renderSearch(state.query, serial)
+        await renderSearch(state.query, serial, offset)
         return
       }
 
       const specialInfo = state.mode === 'read' ? specialPageInfo(state.slug) : null
       if (specialInfo) {
-        await renderSpecialPage(specialInfo, serial)
+        await renderSpecialPage(specialInfo, serial, offset)
         return
       }
 
@@ -2921,7 +2859,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       }
 
       if (state.mode === 'history') {
-        await renderHistory(state.slug, serial)
+        await renderHistory(state.slug, serial, offset)
         return
       }
 
@@ -3048,6 +2986,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
   }
 
   function navigate(url) {
+    history.scrollRestoration = 'manual'
     hideSearchSuggestions()
     rememberScroll()
     history.pushState({ wikiEntry: crypto.randomUUID() }, '', url)
@@ -3065,9 +3004,9 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     positionPage(scrollPositions.get(currentEntry()))
   }
 
-  function bindEvents() {
+  function bindEvents(preserveInitialScroll = false) {
     setupSearchSuggestions()
-    history.scrollRestoration = 'manual'
+    if (!preserveInitialScroll) history.scrollRestoration = 'manual'
     window.addEventListener('scroll', rememberScroll, { passive: true })
 
     document.addEventListener('input', event => {
@@ -3502,8 +3441,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       }
 
       if (target.dataset.link === 'random') {
-        const slug = randomTitles[Math.floor(Math.random() * randomTitles.length)] || HOME_SLUG
-        navigate(pageUrl(slug))
+        navigate(pageUrl('especial/pagina-aleatoria'))
         return
       }
 
@@ -3789,11 +3727,24 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     window.setInterval(tick, 45000)
   }
 
-  async function boot() {
-    bindEvents()
+  async function boot(initial) {
+    if (initial) {
+      displayedEntry = currentEntry()
+      displayedPath = pathAndQuery()
+      rememberScroll()
+    }
+    bindEvents(Boolean(initial))
+    const serial = routeSerial
     currentUser = await getCurrentUser(window.location.pathname + window.location.search)
-    await refreshRandomTitles()
-    await route({ scrollToTop: true })
+    if (!initial) {
+      await refreshRandomTitles()
+      await route({ scrollToTop: true })
+    } else if (isCurrentRoute(serial)) {
+      const state = currentState()
+      updateChrome(initial.slug, state.mode)
+      if (initial.slug.startsWith('arquivo/')) bindSpecialFileUpload(initial.slug.slice('arquivo/'.length))
+      void markMissingArticleLinks(serial).catch(() => {})
+    }
     startSystemWatcher()
   }
 

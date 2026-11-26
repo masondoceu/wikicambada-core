@@ -139,7 +139,7 @@ test('exclusão mútua recusa concorrência e libera o lock após falha', async 
   await operationLock(project.root, () => {})
 })
 test('versões, navegação e caminhos são validados sem dependência de plataforma', () => {
-  const versions = ['1.1.0-alpha.2', '1.1.0-beta', '1.1.0-beta.2', '1.1.0-rc.1', '1.1.0', '1.1.0-r1', '1.1.0-r2', '1.1.1']
+  const versions = ['1.1.0-alpha.2', '1.1.0-beta', '1.1.0-beta.2', '1.1.0-rc.1', '1.1.0', '1.1.0-r1', '1.1.0-r2', '1.1.1-indev.1', '1.1.1-indev.2', '1.1.1']
   assert.deepEqual([...versions].reverse().sort(compareVersions), versions)
   assert.throws(() => versionTuple('1.1.0-unknown'))
   for (const value of ['../x', 'a\\b', 'CON.txt', 'folder/name.', 'file:stream', 'a/../b']) assert.throws(() => safePath(value), /caminho/)
@@ -206,7 +206,8 @@ test('contratos de release são conferidos mesmo com hashes válidos', async () 
     assert.throws(() => validateRelease(project, project.root), message)
   }
   const project = await fixture()
-  project.write('src/config/installation.json', { coreVersion: '1.1.0-r3' })
+  project.write('src/config/installation.json', { coreVersion: '1.1.1' })
+  project.write('wikicambada-files.json', { files: releaseManifest(project.root) })
   assert.throws(() => validateRelease(project, project.root), /anterior/)
 })
 

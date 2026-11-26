@@ -7,7 +7,7 @@ import { adminSettingsHtml, fatalErrorHtml, footerHtml, historyHtml, searchHtml,
 test('página de versão preserva identidade e versão sem explicações de implementação', () => {
   const html = versionPageHtml()
   assert.match(html, /WikiCambada Core/)
-  assert.match(html, /1\.1\.0-r2/)
+  assert.match(html, /1\.1\.1-indev\.1/)
   assert.doesNotMatch(html, /MediaWiki|Parsoid|Especial:Version|cache|Cache|recarregar|\/wiki\/especial\/versao/)
 })
 

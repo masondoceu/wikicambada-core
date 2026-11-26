@@ -401,6 +401,12 @@ function pageRowToListItem(row: any, aliases: any[] = [], redirects: string[] = 
   }
 }
 
+export async function publicUploadMetadata(env: Env, file: NonNullable<Awaited<ReturnType<typeof readUpload>>>) {
+  const { uploadedByEmail, deletedByEmail, r2Key, ...publicFile } = file
+  const profile = uploadedByEmail ? await env.DB!.prepare('SELECT display_name FROM editor_profiles WHERE email = ?').bind(uploadedByEmail).first<{ display_name: string }>() : null
+  return { ...publicFile, uploadedByName: profile?.display_name || 'editor' }
+}
+
 function normalizeEscapedBlockNewlines(value: string) {
   const output: string[] = []
   let insideComponent = false
@@ -422,7 +428,7 @@ function normalizeEscapedBlockNewlines(value: string) {
   return output.join('\n')
 }
 
-function rowToPage(page: any, revisions: any[] = [], categories: string[] = [], aliases: any[] = [], redirects: string[] = [], source: Record<string, any> = {}) {
+function rowToPage(page: any, revisions: any[] = [], categories: string[] = [], aliases: any[] = [], redirects: string[] = [], source: { resolvedFrom?: string; resolvedBy?: 'alias' | 'redirect'; resolvedTitle?: string | null; resolvedFragment?: string; redirectRules?: Array<{ fromSlug: string; fragment: string }> } = {}) {
   if (!page) return null
 
   return {
@@ -559,11 +565,11 @@ async function readPageRevisionSummaries(env: Env, pageId: string) {
   return rows.results || []
 }
 
-async function hydratePage(env: Env, page: any, source: Record<string, any> = {}) {
+async function hydratePage(env: Env, page: any, source: { resolvedFrom?: string; resolvedBy?: 'alias' | 'redirect'; resolvedTitle?: string | null; resolvedFragment?: string; redirectRules?: Array<{ fromSlug: string; fragment: string }> } = {}, includeRevisions = true) {
   if (!page) return null
 
   const [revisions, categories, aliases, redirectRules] = await Promise.all([
-    (await globalSettingEnabled(env, 'pageHistory')) ? readPageRevisionSummaries(env, page.id) : Promise.resolve([]),
+    includeRevisions && (await globalSettingEnabled(env, 'pageHistory')) ? readPageRevisionSummaries(env, page.id) : Promise.resolve([]),
     readPageCategories(env, page.id),
     readPageAliases(env, page.id),
     readPageRedirectRules(env, page.slug)
@@ -625,9 +631,9 @@ function pageVisibilitySql(settings: Record<string, any>) {
   return filters.join(' AND ')
 }
 
-export async function pageListStats(env: Env, includeDeleted = false) {
+export async function pageListStats(env: Env, includeDeleted = false, settings?: Record<string, any>) {
   if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
-  const filter = includeDeleted ? "pages.status IN ('published', 'deleted', 'draft')" : "pages.status = 'published' AND " + pageVisibilitySql(await getGlobalSettings(env))
+  const filter = includeDeleted ? "pages.status IN ('published', 'deleted', 'draft')" : "pages.status = 'published' AND " + pageVisibilitySql(settings ?? await getGlobalSettings(env))
   return env.DB.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM((SELECT COUNT(*) FROM revisions WHERE page_id = pages.id)), 0) AS revisions FROM pages WHERE ${filter}`).first<{ total: number, revisions: number }>()
 }
 
@@ -737,10 +743,10 @@ export async function listPages(env: Env, options: PageListOptions = {}) {
 }
 
 
-export async function listCategories(env: Env) {
+export async function listCategories(env: Env, settings?: Record<string, any>) {
   if (!env.DB) return []
 
-  const visibility = pageVisibilitySql(await getGlobalSettings(env))
+  const visibility = pageVisibilitySql(settings ?? await getGlobalSettings(env))
   const rows = await env.DB.prepare(`
     SELECT
       categories.id,
@@ -804,42 +810,48 @@ export async function readCategory(env: Env, slug: string) {
   }
 }
 
-export async function readPage(env: Env, slug: string) {
-  if (!(await publicPageEnabled(env, slug))) return null
+export async function readPage(env: Env, slug: string, { settings, includeRevisions = true }: { settings?: Record<string, any>; includeRevisions?: boolean } = {}) {
+  settings ??= await getGlobalSettings(env)
+  if (!pageVisibleWithSettings(slug, settings)) return null
   if (!env.DB) return null
 
   const exact = await readPageRowByCandidates(env, slug, { preferCanonical: true })
-  if (exact) return hydratePage(env, exact)
+  if (exact) return hydratePage(env, exact, {}, includeRevisions)
 
   const alias = await resolveAlias(env, slug)
   if (alias) {
-    if (!(await publicPageEnabled(env, String(alias.slug)))) return null
+    if (!pageVisibleWithSettings(String(alias.slug), settings)) return null
     const page = await readPageRow(env, (alias as any).slug)
     return hydratePage(env, page, {
       resolvedFrom: slug,
       resolvedBy: 'alias',
       resolvedTitle: (alias as any).aliasTitle || null
-    })
+    }, includeRevisions)
   }
 
   const redirect = await resolveRedirect(env, slug)
   if (redirect) {
-    if (!(await publicPageEnabled(env, String(redirect.slug)))) return null
+    if (!pageVisibleWithSettings(String(redirect.slug), settings)) return null
     const page = await readPageRow(env, (redirect as any).slug)
     return hydratePage(env, page, {
       resolvedFrom: slug,
       resolvedBy: 'redirect',
       resolvedFragment: cleanRedirectFragment((redirect as any).targetFragment)
-    })
+    }, includeRevisions)
   }
 
   return null
 }
 
 export async function readRandomPage(env: Env) {
+  const slug = await readRandomPageSlug(env)
+  return slug ? readPage(env, slug) : null
+}
+
+export async function readRandomPageSlug(env: Env, settings?: Record<string, any>) {
   if (!env.DB) return null
 
-  const settings = await getGlobalSettings(env)
+  settings ??= await getGlobalSettings(env)
   const rows = await env.DB.prepare(`
     SELECT slug
     FROM pages
@@ -849,8 +861,26 @@ export async function readRandomPage(env: Env) {
   `).all()
 
   const row: any = (rows.results || []).find((item: any) => pageVisibleWithSettings(item?.slug, settings))
-  if (!row?.slug) return null
-  return readPage(env, String(row.slug))
+  return row?.slug ? String(row.slug) : null
+}
+
+export async function indexableSlugCount(env: Env, settings: Record<string, any>) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS total FROM pages WHERE ${indexablePageSql(settings)}`).first<{ total: number }>()
+  return row?.total || 0
+}
+
+function indexablePageSql(settings: Record<string, any>) {
+  return `status = 'published' AND current_revision_id IS NOT NULL AND ${pageVisibilitySql(settings)}
+    AND slug NOT LIKE 'usuario/%' AND slug NOT LIKE 'discussao/%'`
+}
+
+export async function listIndexableSlugs(env: Env, settings: Record<string, any>, offset: number, limit: number) {
+  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  const { results } = await env.DB.prepare(`
+    SELECT slug FROM pages WHERE ${indexablePageSql(settings)} ORDER BY slug LIMIT ? OFFSET ?
+  `).bind(limit, offset).all<{ slug: string }>()
+  return results.map(({ slug }) => slug)
 }
 
 async function nextRevisionNumber(env: Env, pageId: string) {
@@ -1195,11 +1225,13 @@ export async function deletePage(env: Env, slug: string, authorEmail: string, re
   }
 }
 
-export async function listPageRevisions(env: Env, slug: string, options: { offset?: number } = {}) {
-  if (!env.DB) return null
-  if (!(await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
+type PageReadOptions = { settings?: Record<string, any>; page?: NonNullable<Awaited<ReturnType<typeof readPage>>> }
 
-  const page = await readPage(env, slug)
+export async function listPageRevisions(env: Env, slug: string, options: PageReadOptions & { offset?: number } = {}) {
+  if (!env.DB) return null
+  if (!(options.settings ? nestedSettingValue(options.settings, 'pageHistory') : await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
+
+  const page = options.page ?? await readPage(env, slug, { ...options, includeRevisions: false })
   if (!page) return null
   const offset = Math.max(0, Math.floor(Number(options.offset) || 0))
   const count: any = await env.DB.prepare('SELECT COUNT(*) AS total FROM revisions WHERE page_id = ?').bind(page.id).first()
@@ -1234,11 +1266,11 @@ export async function listPageRevisions(env: Env, slug: string, options: { offse
   }
 }
 
-export async function readPageRevision(env: Env, slug: string, revisionNumber: string | number) {
+export async function readPageRevision(env: Env, slug: string, revisionNumber: string | number, options: PageReadOptions = {}) {
   if (!env.DB) return null
-  if (!(await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
+  if (!(options.settings ? nestedSettingValue(options.settings, 'pageHistory') : await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
 
-  const page = await readPage(env, slug)
+  const page = options.page ?? await readPage(env, slug, { ...options, includeRevisions: false })
   if (!page) return null
 
   const revisionColumns = await getRevisionMetadataColumns(env)
@@ -3446,10 +3478,10 @@ function activityPathAllowed(pathname: string) {
 }
 
 export async function recordActivity(env: Env, request: Request, user: { email?: string | null, displayName?: string | null, role?: string | null } | null = null) {
+  const url = new URL(request.url)
+  if (!activityPathAllowed(url.pathname) || request.method !== 'GET') return null
   if (!(await globalSettingEnabled(env, 'activityLogging'))) return null
   if (!env.DB || !(await tableExists(env, 'activity_events'))) return null
-  const url = new URL(request.url)
-  if (!activityPathAllowed(url.pathname)) return null
 
   const columns = await getActivityEventColumns(env)
   const ip = clientIpFromRequest(request)
@@ -3534,7 +3566,7 @@ export async function getSystemStatus(env: Env) {
   const cacheVersion = await getSetting(env, 'cache_version', { value: 0, updatedAt: null })
   const reloadVersion = await getSetting(env, 'reload_version', { value: 0, updatedAt: null })
   const publicVersion = (value: any) => ({ value: Number(value?.value || 0), updatedAt: value?.updatedAt || null })
-  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.0-r2' }
+  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.1-indev.1' }
 }
 
 export async function forceSystemRefresh(env: Env, mode: 'cache' | 'reload', authorEmail: string) {

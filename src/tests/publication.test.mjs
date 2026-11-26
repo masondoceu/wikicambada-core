@@ -22,6 +22,7 @@ test('publicação contém somente assets e configuração pública', async () =
     installed.features.cloudflareBadge = false
     installed.features.builtWithCloudflareBadge = true
     installed.branding.privateToken = 'secret-token'
+    installed.seo = { indexing: false, disallow: ['/wiki/unlisted', '/bad\nAllow: /'], privateToken: 'secret-token' }
     installed.navigation.main.push({ label: 'Link', href: '/', privateToken: 'secret-token' })
     await writeFile(join(root, 'src/config/site.json'), JSON.stringify(installed))
     await writeFile(join(root, 'src/data/wiki-icons.json'), JSON.stringify({ icons: ['/src/media/images/core/cat-guard.png'], fallback: '/src/media/images/core/cat-guard.png', privateToken: 'secret-token' }))
@@ -38,6 +39,7 @@ test('publicação contém somente assets e configuração pública', async () =
     assert.equal(config.cloudflare, undefined)
     assert.equal(config.site.privateToken, undefined)
     assert.equal(config.branding.privateToken, undefined)
+    assert.deepEqual(config.seo, { indexing: false, disallow: ['/wiki/unlisted'] })
     assert.equal(config.navigation.main.at(-1).privateToken, undefined)
     assert.equal(JSON.parse(await readFile(join(output, 'src/data/wiki-icons.json'), 'utf8')).privateToken, undefined)
     await assert.rejects(buildPublic(root, join(root, 'src')), /destino de publicação inválido/)
@@ -50,8 +52,8 @@ test('publicação contém somente assets e configuração pública', async () =
       assert.equal((await assets(new Request('https://wiki.example.com/src/scripts/app.js'))).status, 200)
       const route = await loadFunction('functions/wiki/[[slug]].ts')
       const response = await route.onRequestGet({ request: new Request('https://wiki.example.com/wiki/alpha?revision=2'), env: { ASSETS: { fetch: assets } } })
-      assert.equal(response.status, 200)
-      assert.match(await response.text(), /src\/scripts\/app.js/)
+      assert.equal(response.status, 503)
+      assert.doesNotMatch(await response.text(), /src\/scripts\/app.js/)
     } finally { signal.abort() }
   } finally { await rm(root, { recursive: true, force: true }) }
 })

@@ -1,14 +1,11 @@
-import { HOME_SLUG } from './config.js'
+import { APP_VERSION, HOME_SLUG, SITE_CONFIG, featureEnabled } from './config.js'
 import { interfaceLanguage, interfaceLocale } from './i18n.js'
 
 export function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
+  return String(value ?? '').replace(/[&<>"']/g, character => htmlEntities[character])
 }
+
+const htmlEntities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }
 
 export function normalizeKey(value) {
   return String(value || '')
@@ -31,17 +28,17 @@ export function slugify(value) {
     .replace(/^-+|-+$/g, '') || 'pagina-sem-nome'
 }
 
-export function titleFromSlug(slug) {
+export function titleFromSlug(slug, language = interfaceLanguage()) {
   return String(slug || '')
     .split('-')
     .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || (interfaceLanguage() === 'en' ? 'Untitled page' : 'Página sem nome')
+    .join(' ') || (language === 'en' ? 'Untitled page' : 'Página sem nome')
 }
 
-export function formatDate(value) {
+export function formatDate(value, locale = interfaceLocale()) {
   try {
-    return new Intl.DateTimeFormat(interfaceLocale(), {
+    return new Intl.DateTimeFormat(locale, {
       dateStyle: 'long',
       timeStyle: 'short'
     }).format(new Date(value))
@@ -74,10 +71,10 @@ function encodeSlugPath(slug) {
     .join('/')
 }
 
-export function pageUrl(slug, mode = 'read') {
-  const cleanSlug = slug || HOME_SLUG
+export function pageUrl(slug, mode = 'read', homeSlug = HOME_SLUG) {
+  const cleanSlug = slug || homeSlug
   const encoded = encodeSlugPath(cleanSlug)
-  if (cleanSlug === HOME_SLUG && mode === 'read') return '/'
+  if (cleanSlug === homeSlug && mode === 'read') return '/'
   if (mode === 'edit') return `/edit/${encoded}`
   if (mode === 'history') return `/history/${encoded}`
   if (mode === 'suggest') return `/suggest/${encoded}`
@@ -111,17 +108,17 @@ export function applyTemplateVars(value, context) {
   return String(value || '').replace(/\{([a-zA-Z0-9_]+)}/g, (_, key) => context[key] ?? `{${key}}`)
 }
 
-export function parseRoute() {
-  const params = new URLSearchParams(window.location.search)
-  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+export function parseRoute(url = window.location, homeSlug = HOME_SLUG) {
+  const params = new URLSearchParams(url.search)
+  const path = url.pathname.replace(/\/+$/, '') || '/'
   const parts = path.split('/').filter(Boolean).map(part => decodePathPart(part))
 
   if (path === '/search') {
-    return { mode: 'search', slug: HOME_SLUG, query: params.get('q') || '' }
+    return { mode: 'search', slug: homeSlug, query: params.get('q') || '' }
   }
 
   if (parts[0] === 'wiki') {
-    return { mode: 'read', slug: parts.slice(1).join('/') || HOME_SLUG, query: null }
+    return { mode: 'read', slug: parts.slice(1).join('/') || homeSlug, query: null }
   }
 
   if (parts[0] === 'usuario') {
@@ -129,46 +126,46 @@ export function parseRoute() {
   }
 
   if (parts[0] === 'talk' || parts[0] === 'discussao') {
-    return { mode: 'read', slug: `discussao/${parts.slice(1).join('/') || HOME_SLUG}`, query: null }
+    return { mode: 'read', slug: `discussao/${parts.slice(1).join('/') || homeSlug}`, query: null }
   }
 
   if (parts[0] === 'edit') {
-    return { mode: 'edit', slug: parts.slice(1).join('/') || HOME_SLUG, query: null }
+    return { mode: 'edit', slug: parts.slice(1).join('/') || homeSlug, query: null }
   }
 
   if (parts[0] === 'history') {
-    return { mode: 'history', slug: parts.slice(1).join('/') || HOME_SLUG, query: null }
+    return { mode: 'history', slug: parts.slice(1).join('/') || homeSlug, query: null }
   }
 
   if (parts[0] === 'suggest') {
-    return { mode: 'suggest', slug: parts.slice(1).join('/') || HOME_SLUG, query: null }
+    return { mode: 'suggest', slug: parts.slice(1).join('/') || homeSlug, query: null }
   }
 
   if (parts[0] === 'admin') {
     const section = parts[1] || ''
-    if (section === 'proposals') return { mode: 'admin-proposals', slug: HOME_SLUG, query: params.get('id') || '' }
-    if (section === 'templates') return { mode: 'admin-templates', slug: HOME_SLUG, query: null }
-    if (section === 'pages' || section === 'paginas') return { mode: 'admin-pages', slug: HOME_SLUG, query: null }
-    if (section === 'maintenance' || section === 'manutencao') return { mode: 'admin-maintenance', slug: HOME_SLUG, query: null }
-    if (section === 'redirects' || section === 'redirecionamentos' || section === 'aliases') return { mode: 'admin-redirects', slug: HOME_SLUG, query: null }
-    if (section === 'backup' || section === 'seed') return { mode: 'admin-backup', slug: HOME_SLUG, query: null }
-    if (section === 'storage' || section === 'armazenamento') return { mode: 'admin-storage', slug: HOME_SLUG, query: params.get('q') || '' }
-    if (section === 'trash' || section === 'lixeira') return { mode: 'admin-trash', slug: HOME_SLUG, query: null }
-    if (section === 'users' || section === 'usuarios') return { mode: 'admin-users', slug: HOME_SLUG, query: null }
-    if (section === 'activity' || section === 'atividade') return { mode: 'admin-activity', slug: HOME_SLUG, query: null }
-    if (section === 'system' || section === 'sistema') return { mode: 'admin-system', slug: HOME_SLUG, query: null }
-    if (section === 'settings' || section === 'configuracoes' || section === 'configurações') return { mode: 'admin-settings', slug: HOME_SLUG, query: null }
-    if (section === 'ip' || section === 'ips') return { mode: 'admin-ip', slug: HOME_SLUG, query: null }
-    return { mode: 'admin-dashboard', slug: HOME_SLUG, query: null }
+    if (section === 'proposals') return { mode: 'admin-proposals', slug: homeSlug, query: params.get('id') || '' }
+    if (section === 'templates') return { mode: 'admin-templates', slug: homeSlug, query: null }
+    if (section === 'pages' || section === 'paginas') return { mode: 'admin-pages', slug: homeSlug, query: null }
+    if (section === 'maintenance' || section === 'manutencao') return { mode: 'admin-maintenance', slug: homeSlug, query: null }
+    if (section === 'redirects' || section === 'redirecionamentos' || section === 'aliases') return { mode: 'admin-redirects', slug: homeSlug, query: null }
+    if (section === 'backup' || section === 'seed') return { mode: 'admin-backup', slug: homeSlug, query: null }
+    if (section === 'storage' || section === 'armazenamento') return { mode: 'admin-storage', slug: homeSlug, query: params.get('q') || '' }
+    if (section === 'trash' || section === 'lixeira') return { mode: 'admin-trash', slug: homeSlug, query: null }
+    if (section === 'users' || section === 'usuarios') return { mode: 'admin-users', slug: homeSlug, query: null }
+    if (section === 'activity' || section === 'atividade') return { mode: 'admin-activity', slug: homeSlug, query: null }
+    if (section === 'system' || section === 'sistema') return { mode: 'admin-system', slug: homeSlug, query: null }
+    if (section === 'settings' || section === 'configuracoes' || section === 'configurações') return { mode: 'admin-settings', slug: homeSlug, query: null }
+    if (section === 'ip' || section === 'ips') return { mode: 'admin-ip', slug: homeSlug, query: null }
+    return { mode: 'admin-dashboard', slug: homeSlug, query: null }
   }
 
   if (params.get('q')) {
-    return { mode: 'search', slug: HOME_SLUG, query: params.get('q') || '' }
+    return { mode: 'search', slug: homeSlug, query: params.get('q') || '' }
   }
 
   return {
     mode: params.get('mode') || 'read',
-    slug: params.get('page') || HOME_SLUG,
+    slug: params.get('page') || homeSlug,
     query: null
   }
 }
@@ -181,4 +178,14 @@ export function isCurrentAppUrl(url) {
   const parsed = new URL(url, window.location.href)
   const here = new URL(window.location.href)
   return parsed.origin === here.origin
+}
+
+export const browserRenderRuntime = {
+  get href() { return window.location.href },
+  get config() { return SITE_CONFIG },
+  get version() { return APP_VERSION },
+  pageUrl,
+  featureEnabled,
+  language: interfaceLanguage,
+  locale: interfaceLocale
 }

@@ -41,7 +41,7 @@ export async function buildPublic(root = resolve(dirname(fileURLToPath(import.me
     for (const path of ['index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked/index.html', 'access-denied/index.html', 'login-error/index.html', 'non-identity-blocked/index.html']) await copy(path)
     const scripts = ['app.js', 'api.js', 'theme.js', 'media-viewer.js', 'random-icon.js', 'static-page.js']
     for (const script of scripts) await copy(`src/scripts/${script}`)
-    for (const script of ['core/config.js', 'core/i18n.js', 'core/utils.js', 'renderers/wiki-markdown.js', 'renderers/wiki-renderer.js', 'routes/wiki-router.js', 'services/wiki-api.js']) await copy(`src/scripts/${script}`)
+    for (const script of ['core/config.js', 'core/i18n.js', 'core/utils.js', 'renderers/wiki-markdown.js', 'renderers/wiki-renderer.js', 'routes/wiki-router.js', 'routes/wiki-special.js', 'services/wiki-api.js']) await copy(`src/scripts/${script}`)
     await copy('src/styles/wiki.css')
     for (const folder of ['images', 'fonts', 'branding']) {
       try { await tree(`src/media/${folder}`, new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.otf'])) }
@@ -73,7 +73,8 @@ export async function buildPublic(root = resolve(dirname(fileURLToPath(import.me
       await writeFile(resolve(stage, path), JSON.stringify(publicIcons(manifest)))
     }
     await mkdir(resolve(stage, 'src/config'), { recursive: true })
-    await writeFile(resolve(stage, 'src/config/site.json'), JSON.stringify({ schemaVersion, site, branding, appearance, features, navigation, access: { mode: config.access?.mode } }))
+    const seo = { indexing: config.seo?.indexing !== false, disallow: Array.isArray(config.seo?.disallow) ? config.seo.disallow.filter(path => typeof path === 'string' && /^\/[\w./%~-]*$/.test(path) && !path.startsWith('//')).slice(0, 100) : [] }
+    await writeFile(resolve(stage, 'src/config/site.json'), JSON.stringify({ schemaVersion, site, branding, appearance, features, navigation, seo, access: { mode: config.access?.mode } }))
     const release = JSON.parse(await readFile(resolve(root, 'wikicambada-release.json'), 'utf8'))
     await writeFile(resolve(stage, 'wikicambada-release.json'), JSON.stringify({ product: release.product, version: release.version, displayVersion: release.displayVersion, channel: release.channel, databaseSchema: release.databaseSchema }))
     let moved = false

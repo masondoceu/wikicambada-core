@@ -1,3 +1,1 @@
-import { serveSpa } from './_lib/spa'
-
-export const onRequestGet = serveSpa
+export { serveRead as onRequestGet } from './_lib/read'

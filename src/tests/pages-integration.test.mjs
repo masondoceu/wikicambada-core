@@ -30,7 +30,16 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
     }
     const bindings = { ACCESS_TEAM_DOMAIN: 'https://test.cloudflareaccess.com', ACCESS_AUD: 'test', ACCESS_STRICT: 'true', WIKI_SUPER_ADMIN_EMAIL: 'owner@example.com', WIKI_ACCESS_MODE: 'public' }
     const legacyOptions = { modules: true, modulesRoot: output, scriptPath: join(output, file), compatibilityDate: '2026-06-22', d1Databases: { DB: 'integration' }, r2Buckets: ['WIKI_BUCKET'], bindings, cf: false,
-      serviceBindings: { ASSETS: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) },
+      serviceBindings: { ASSETS: async request => {
+        const url = new URL(request.url)
+        if (url.pathname === '/src/config/site.json') return Response.json({
+          site: { name: url.hostname === 'other.example.com' ? 'Outra "wiki"' : 'Fixture </script> & Wiki', language: 'en', interfaceLanguage: 'en', homeSlug: 'main-page' },
+          branding: { logo: '/src/media/branding/logo.png', favicon: '/src/media/branding/icon.png' },
+          navigation: { main: [{ href: '/', label: 'Fixture home' }] },
+          access: { mode: 'public' }, seo: { disallow: ['/wiki/unlisted'] }
+        })
+        return new Response(html, { headers: { 'content-type': 'text/html' } })
+      } },
       outboundService: async request => { assert.equal(request.url, 'https://test.cloudflareaccess.com/cdn-cgi/access/certs'); return Response.json({ keys: [jwk] }) }
     }
     const options = convertV4MiniflareOptions(legacyOptions)
@@ -51,12 +60,63 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
       return mf.dispatchFetch(`https://wiki.example.com${path}`, { method, headers, ...(payload === undefined ? {} : { body: payload }) })
     }
     const shell = await mf.dispatchFetch('https://wiki.example.com/wiki/alpha')
-    assert.equal(shell.status, 200)
-    assert.match(await shell.text(), /src\/scripts\/app.js/)
+    assert.equal(shell.status, 404)
+    assert.match(await shell.text(), /Page not found/)
     assert.equal((await request('/api/secure/pages/alpha/revisions', editor, { title: 'Alpha' })).status, 428)
-    const input = { title: 'Alpha', content: 'first', summary: 'created', expectedRevisionId: null }
+    for (const [slug, minRole, text] of [['public-card', 'guest', 'Public template content'], ['restricted-card', 'admin', 'Restricted template content']]) {
+      const template = await request('/api/secure/admin/templates', owner, { slug, title: slug, minRole, call: `{{${slug}}}`, renderMarkdown: `**${text}**` })
+      assert.equal(template.status, 200, await template.clone().text())
+    }
+    const input = { title: 'Alpha', content: 'Editorial **prose**.\n\n__TOC__\n\n## A section\n\n[[Alpha#a-section|Jump]]\n\n:::infobox\nTitle: Example infobox\n::: \n\n![Caption](/src/media/branding/figure.png)\n\n<article>Literal HTML</article>\n\n{{public-card}}\n\n{{restricted-card}}', categories: ['Examples'], aliases: ['Alpha alias'], redirectRules: [{ fromSlug: 'alpha-redirect', fragment: 'a-section' }], summary: 'created', expectedRevisionId: null }
     const first = await (await request('/api/secure/pages/alpha/revisions', editor, input)).json()
-    assert.equal(first.ok, true)
+    assert.equal(first.ok, true, JSON.stringify(first))
+    const read = path => mf.dispatchFetch('https://wiki.example.com' + path, { redirect: 'manual' })
+    const response = await read('/wiki/alpha')
+    const document = await response.text()
+    assert.equal(response.status, 200, document)
+    assert.match(response.headers.get('cache-control'), /no-store/)
+    assert.match(document, /<title>Alpha - Fixture &lt;\/script&gt; &amp; Wiki<\/title>/)
+    assert.match(document, /<article class="wiki-article">[\s\S]*Editorial <strong>prose<\/strong>/)
+    assert.match(document, /<html lang="en" class="is-ready"/)
+    assert.match(document, /<link rel="canonical" href="https:\/\/wiki\.example\.com\/wiki\/alpha">/)
+    assert.match(document, /name="description" content="Editorial prose\.[^"]*"/)
+    assert.match(document, /property="og:image" content="https:\/\/wiki\.example\.com\/src\/media\/branding\/figure\.png"/)
+    assert.match(document, /href="\/wiki\/alpha#a-section"/)
+    assert.match(document, /id="a-section"/)
+    assert.match(document, /class="article-toc"/)
+    assert.match(document, /Example infobox/)
+    assert.match(document, /&lt;article&gt;Literal HTML&lt;\/article&gt;/)
+    assert.match(document, /Fixture home/)
+    assert.match(document, /action="\/search" method="get"/)
+    assert.match(document, /src="\/src\/scripts\/app\.js"/)
+    assert.match(document, /src="\/src\/media\/branding\/logo\.png"/)
+    assert.match(document, /href="\/src\/media\/branding\/icon\.png"/)
+    assert.match(document, /<strong>Public template content<\/strong>/)
+    assert.doesNotMatch(document, /Restricted template content/)
+    const allowed = await request('/wiki/alpha', owner, undefined, 'GET')
+    assert.match(allowed.headers.get('cache-control'), /no-store/)
+    assert.match(await allowed.text(), /Restricted template content/)
+    assert.doesNotMatch(document, /id="bootScreen"|editor@example\.com/)
+    const state = document.match(/<script id="wiki-initial" type="application\/json">([^<]*)<\/script>/)[1]
+    assert.equal(JSON.parse(state).config.site.name, 'Fixture </script> & Wiki')
+    assert.doesNotMatch(state, /Editorial prose|superAdminEmail|currentRevisionId|databaseId/)
+    const other = await Promise.all([read('/wiki/alpha'), mf.dispatchFetch('https://other.example.com/wiki/alpha')])
+    assert.match(await other[0].text(), /Fixture/)
+    assert.match(await other[1].text(), /Outra/)
+    const redirect = await read('/wiki/alpha-redirect')
+    assert.equal(redirect.status, 302)
+    assert.equal(redirect.headers.get('location'), '/wiki/alpha#a-section')
+    assert.equal((await read('/wiki/alpha-alias')).headers.get('location'), '/wiki/alpha')
+    assert.match(await (await read('/search?q=Editorial')).text(), /Alpha/)
+    assert.match(await (await read('/wiki/categoria/examples')).text(), /Alpha/)
+    assert.match(await (await read('/wiki/especial/todas-as-paginas')).text(), /Alpha/)
+    assert.match(await (await read('/wiki/especial/paginas-recentes')).text(), /Alpha/)
+    assert.equal((await read('/wiki/especial/pagina-aleatoria')).headers.get('location'), '/wiki/alpha')
+    assert.match(await (await read('/sitemap.xml')).text(), /<loc>https:\/\/wiki\.example\.com\/wiki\/alpha<\/loc>/)
+    assert.match(await (await read('/robots.txt')).text(), /Disallow: \/wiki\/unlisted/)
+    const history = await read('/history/alpha?revision=1')
+    assert.match(history.headers.get('x-robots-tag'), /noindex/)
+    assert.match(await history.text(), /Editorial <strong>prose<\/strong>/)
     const results = await Promise.all([request('/api/secure/pages/alpha/revisions', editor, { ...input, content: 'second', expectedRevisionId: first.page.currentRevisionId }), request('/api/pages/alpha', editor, { ...input, content: 'third', expectedRevisionId: first.page.currentRevisionId })])
     assert.deepEqual(results.map(response => response.status).sort(), [200, 409])
     globalThis.fetch = (path, options = {}) => mf.dispatchFetch(new URL(path, 'https://wiki.example.com').href, { ...options, headers: { ...options.headers, 'cf-access-jwt-assertion': editor } })
@@ -86,19 +146,46 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
     assert.equal(content.headers.get('cache-control'), 'no-store')
     const publicFile = await (await mf.dispatchFetch(`https://wiki.example.com/api/files/${uploaded.slug}`)).json()
     assert.equal(publicFile.uploadedByEmail, undefined)
+    const fileDocument = await (await read(`/wiki/arquivo/${uploaded.slug}`)).text()
+    assert.match(fileDocument, /pixel\.png/)
+    assert.doesNotMatch(fileDocument, /editor@example\.com|uploads\//)
     assert.equal((await request(`/api/secure/admin/storage/files/${uploaded.slug}`, owner, undefined, 'DELETE')).status, 200)
     assert.equal((await mf.dispatchFetch(`https://wiki.example.com/api/uploads/${uploaded.r2Key}`)).status, 404)
     await DB.prepare("INSERT INTO global_settings VALUES ('pageHistory','false','now','owner@example.com')").run()
     assert.equal((await mf.dispatchFetch('https://wiki.example.com/api/revisions/alpha')).status, 403)
+    assert.equal((await read('/history/alpha?revision=1')).status, 403)
     await DB.prepare("UPDATE editor_profiles SET status = 'disabled' WHERE email = 'editor@example.com'").run()
     assert.equal((await request('/api/secure/pages/alpha/revisions', editor, input)).status, 403)
     assert.equal((await DB.prepare('SELECT COUNT(*) n FROM revisions').first()).n, 3)
+    for (const slug of ['discussao/alpha', 'usuario/alpha', 'deleted-example']) {
+      const added = await request('/api/secure/pages/' + encodeURIComponent(slug) + '/revisions', owner, { ...input, title: 'Namespace example', content: 'Namespace body', categories: [], aliases: [], redirectRules: [] })
+      assert.equal(added.status, 200, await added.clone().text())
+    }
+    for (const path of ['/talk/alpha', '/usuario/alpha']) assert.match(await (await read(path)).text(), /Namespace body/)
+    assert.equal((await read('/discussao/alpha')).headers.get('location'), '/talk/alpha')
+    await DB.prepare("INSERT INTO global_settings VALUES ('talkPages','false','now','owner@example.com')").run()
+    await DB.prepare("UPDATE pages SET status='deleted' WHERE slug='deleted-example'").run()
+    assert.equal((await read('/talk/alpha')).status, 403)
+    assert.equal((await read('/wiki/deleted-example')).status, 404)
+    assert.doesNotMatch(await (await read('/sitemap.xml')).text(), /deleted-example|discussao|usuario/)
+    const blocked = await request('/api/secure/admin/ip-rules', owner, { ip: '192.0.2.0/24', action: 'ban_site' })
+    assert.equal(blocked.status, 200, await blocked.clone().text())
+    const blockedPage = await mf.dispatchFetch('https://wiki.example.com/wiki/alpha', { headers: { 'cf-connecting-ip': '192.0.2.1' }, redirect: 'manual' })
+    assert.equal(blockedPage.headers.get('location'), '/access-blocked/')
     await mf.setOptions({ ...base, workers: options.workers.map(worker => ({ ...worker, config: { ...worker.config, env: { ...worker.config.env, WIKI_ACCESS_MODE: { type: 'text', value: 'private' } } } })) })
     DB = await mf.getD1Database('DB')
     const privateResponse = await mf.dispatchFetch('https://wiki.example.com/api/pages/alpha')
     assert.equal(privateResponse.status, 401, await privateResponse.clone().text())
     assert.equal((await request('/api/pages/alpha', editor, undefined, 'GET')).status, 403)
     assert.equal((await request('/api/pages/alpha', owner, undefined, 'GET')).status, 200)
+    assert.equal((await read('/wiki/alpha')).status, 401)
+    const privatePage = await request('/wiki/alpha', owner, undefined, 'GET')
+    assert.equal(privatePage.status, 200)
+    assert.match(privatePage.headers.get('cache-control'), /no-store/)
+    assert.match(privatePage.headers.get('x-robots-tag'), /noindex/)
+    assert.doesNotMatch(await privatePage.text(), /owner@example\.com/)
+    assert.equal((await read('/sitemap.xml')).status, 404)
+    assert.match(await (await read('/robots.txt')).text(), /Disallow: \/\n/)
     globalThis.fetch = previousFetch
     async function recovery(worker, token, action, fields = {}, params = {}) {
       const get = ['table', 'objects', 'object'].includes(action) && params.read
@@ -110,6 +197,7 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
     }
     const backup = await recovery(mf, null, 'begin-backup')
     assert.equal((await request('/api/secure/pages/alpha/revisions', owner, input)).status, 503)
+    assert.equal((await request('/wiki/alpha', owner, undefined, 'GET')).status, 503)
     const tables = {}
     for (const table of Object.keys(backup.tables)) {
       tables[table] = []
@@ -154,6 +242,9 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
       assert.equal(localUser.role, 'super_admin'); assert.equal(localUser.canEdit, true)
       const home = await (await previousFetch(local.origin + '/api/pages/main-page')).json()
       assert.equal(home.title, 'Main page'); assert.match(home.content, /Welcome/)
+      const homeDocument = await previousFetch(local.origin)
+      assert.equal(homeDocument.status, 200)
+      assert.match(await homeDocument.text(), /Welcome/)
       const edited = await previousFetch(local.origin + '/api/secure/pages/main-page/revisions', { method: 'POST', headers: { origin: local.origin, 'content-type': 'application/json', 'x-wiki-request': '1' }, body: JSON.stringify({ title: 'My home', content: 'edited', summary: 'edit', expectedRevisionId: home.currentRevisionId }) })
       assert.equal(edited.status, 200, await edited.clone().text())
       assert.equal((await previousFetch(local.origin + '/api/secure/admin/system')).status, 200)

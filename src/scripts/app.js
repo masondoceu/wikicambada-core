@@ -21,17 +21,25 @@ function setReady() {
 }
 
 async function boot() {
-  await loadSiteConfig()
+  let initial
+  try {
+    const node = document.querySelector('#wiki-initial')
+    if (node?.textContent) initial = JSON.parse(node.textContent)
+  } catch {}
+  await loadSiteConfig(initial)
   bootThemeControls()
   bootMediaViewer()
   const router = createWikiRouter({ app, searchForm, searchInput })
 
   try {
-    await loadGlobalSettings()
-    await bootRandomIcon()
-    await router.boot()
+    if (!initial) await loadGlobalSettings()
+    if (initial) {
+      setReady()
+      if (initial.config?.branding?.randomIcons) void bootRandomIcon().catch(() => {})
+    } else await bootRandomIcon()
+    await router.boot(initial)
   } catch (error) {
-    router.renderFatalError(error)
+    if (!initial) router.renderFatalError(error)
   } finally {
     setReady()
   }

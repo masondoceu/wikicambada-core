@@ -445,6 +445,16 @@ Pages deploys only `.wikicambada/public`, prepared by `npm run build`. Developme
 
 ## Development
 
+### Hybrid article rendering (Everywhere development build)
+
+Pages Functions render public reading routes with the same editorial parser as the SPA. For an initial article request, the browser keeps the rendered article and reads the public configuration and feature settings embedded in the document. The editor, preview and subsequent SPA navigation continue to run in the browser.
+
+Set the optional `seo.indexing` field in `src/config/site.json` to `false` to disable indexing, or set `seo.disallow` to an array of root-relative path prefixes to exclude selected routes. Rebuild the public assets after changing the configuration. The sitemap lists published canonical editorial URLs, while authentication and feature settings govern access independently.
+
+Use the development updater when testing an upgrade from 1.1.0-r2 in a disposable installation. The updater bundled with 1.1.0-r2 predates the `indev` version suffix.
+
+To check article rendering locally, apply the local D1 migrations and start `npm run dev`. Open a known article and its history with JavaScript disabled, check the status and metadata of an existing and a missing article, and follow a category link, a section link and a redirect. Check `/robots.txt` and `/sitemap.xml` in public and private configurations. With JavaScript enabled, use the network panel to confirm that the initial document does not trigger a second article fetch, then navigate to another article and back.
+
 In a fresh clone, `node setup.js verify` checks Core files and the local configuration structure. To install the lockfile dependencies, run `npm ci`. Use a separate copy to test wiki configuration, since the setup writes `site.json`, `installation.json` and `wrangler.toml` in the directory where it is installed.
 
 Local Pages server:
