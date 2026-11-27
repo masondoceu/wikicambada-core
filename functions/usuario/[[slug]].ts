@@ -1,1 +1,1 @@
-export { serveRead as onRequestGet } from '../_lib/read'
+export { serveRead as onRequestGet, serveRead as onRequestHead } from '../_lib/read'

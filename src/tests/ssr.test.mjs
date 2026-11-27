@@ -4,6 +4,7 @@ import { SITE_CONFIG, APP_VERSION, featureEnabled } from '../scripts/core/config
 import { interfaceLanguage, interfaceLocale } from '../scripts/core/i18n.js'
 import { pageUrl } from '../scripts/core/utils.js'
 import { articleHtml, createWikiRenderer } from '../scripts/renderers/wiki-renderer.js'
+import { createMarkdownRenderer } from '../scripts/renderers/wiki-markdown.js'
 import { createWikiRouter } from '../scripts/routes/wiki-router.js'
 import { clearPublicCache } from '../scripts/services/wiki-api.js'
 import { database, loadFunction } from './helpers.mjs'
@@ -47,6 +48,50 @@ test('Existing sitemap partitions stay valid when their URLs are excluded from i
     assert.doesNotMatch(await filtered.text(), /<url>/)
     assert.equal((await read('?page=3')).status, 404)
   } finally { DB.sqlite.close() }
+})
+
+test('The sitemap omits stored slugs shadowed by generated routes', async () => {
+  const DB = await database()
+  try {
+    for (const slug of ['main-page', 'valid', 'version', 'todas-as-paginas', 'categoria/example']) {
+      DB.sqlite.prepare("INSERT INTO pages (id, slug, title, created_at, updated_at) VALUES (?, ?, ?, '2025-01-01', '2025-01-01')").run(slug, slug, slug)
+      DB.sqlite.prepare("INSERT INTO revisions (id, page_id, revision_number, author_email, content_markdown, created_at) VALUES (?, ?, 1, 'editor@example.test', 'Article', '2025-01-01')").run('rev-' + slug, slug)
+      DB.sqlite.prepare('UPDATE pages SET current_revision_id = ? WHERE id = ?').run('rev-' + slug, slug)
+    }
+    const { onRequestGet } = await loadFunction('functions/sitemap.xml.ts')
+    const env = { DB, ASSETS: { fetch: () => Response.json({ site: { homeSlug: 'main-page' } }) } }
+    const request = new Request('https://wiki.example.test/sitemap.xml')
+    const response = await onRequestGet({ request, env })
+    assert.equal(response.status, 200)
+    assert.deepEqual([...((await response.text()).matchAll(/<loc>([^<]+)<\/loc>/g))].map(match => match[1]), ['https://wiki.example.test/', 'https://wiki.example.test/wiki/valid'])
+  } finally { DB.sqlite.close() }
+})
+
+const markdown = () => createMarkdownRenderer({
+  href: 'https://wiki.example.test/wiki/article', origin: 'https://wiki.example.test',
+  config: { site: { homeSlug: 'main-page' } }, pageUrl, featureEnabled, language: () => 'en'
+})
+
+test('Markdown follows native same-origin file links and keeps wiki links in the SPA', () => {
+  const renderer = markdown()
+  assert.equal(renderer.inlineMarkdown('[File](/api/files/example/content)'), '<a href="/api/files/example/content">File</a>')
+  assert.match(renderer.inlineMarkdown('[Article](/wiki/article)'), /data-link="page" data-slug="article"/)
+})
+
+test('Background blocks accept a gradient value and reject additional CSS declarations', () => {
+  const renderer = markdown()
+  const body = gradient => `:::background\ngradient: ${gradient}\n\nSample\n:::`
+  const valid = 'linear-gradient(180deg, rgba(255,255,255,.85), #fff)'
+  assert.match(renderer.markdownToHtml(body(valid)), /style="--wiki-box-bg: linear-gradient/)
+  assert.doesNotMatch(renderer.markdownToHtml(body(valid + '; color: red')), /style=/)
+})
+
+test('Multiline templates render within the shared transclusion budget', () => {
+  const renderer = markdown()
+  const options = { templates: [{ slug: 'sample', renderMarkdown: 'Hello {{{who}}}.' }] }
+  assert.match(renderer.markdownToHtml('{{Sample\n|who=reader\n}}\n\nNext paragraph.', options), /Hello reader\.[\s\S]*Next paragraph/)
+  const large = { templates: [{ slug: 'sample', renderMarkdown: '{{{who}}}'.repeat(1050) }] }
+  assert.match(renderer.markdownToHtml(`{{Sample|who=${'a'.repeat(1000)}}}`, large), /transclusion limit reached/)
 })
 
 test('The SPA keeps the initial article and commits only the latest concurrent navigation', async () => {

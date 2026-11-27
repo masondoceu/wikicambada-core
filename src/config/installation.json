@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "coreVersion": "1.1.1-indev.2",
+  "coreVersion": "1.1.1",
   "configSchema": 1,
   "databaseSchema": null,
   "requiredDatabaseSchema": 17,

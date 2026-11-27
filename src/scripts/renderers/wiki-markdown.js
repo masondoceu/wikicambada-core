@@ -39,13 +39,15 @@ export function createMarkdownRenderer(runtime) {
       const parts = parsed.pathname.replace(/\/+$/, '').split('/').filter(Boolean).map(part => decodeURIComponent(part))
       const query = parsed.searchParams.get('q')
 
-      if (parts[0] === 'search' || query) return ` data-search="${escapeHtml(query || '')}"`
+      if (parts[0] === 'search' || (!parts.length && query)) return ` data-search="${escapeHtml(query || '')}"`
       if (parts[0] === 'edit') return ` data-link="edit" data-slug="${escapeHtml(parts.slice(1).join('/') || runtime.config.site.homeSlug)}"`
       if (parts[0] === 'history') return ` data-link="history" data-slug="${escapeHtml(parts.slice(1).join('/') || runtime.config.site.homeSlug)}"`
       if (parts[0] === 'suggest') return ` data-link="suggest" data-slug="${escapeHtml(parts.slice(1).join('/') || runtime.config.site.homeSlug)}"`
       if (parts[0] === 'wiki') return ` data-link="page" data-slug="${escapeHtml(parts.slice(1).join('/') || runtime.config.site.homeSlug)}"`
       if (parts[0] === 'usuario') return ` data-link="page" data-slug="${escapeHtml(`usuario/${parts.slice(1).join('/') || 'usuario-sem-nome'}`)}"`
       if (parts[0] === 'talk' || parts[0] === 'discussao') return ` data-link="page" data-slug="${escapeHtml(`discussao/${parts.slice(1).join('/') || runtime.config.site.homeSlug}`)}"`
+      if (parts[0] === 'admin') return ' data-link="route"'
+      if (parts.length) return ''
 
       const page = parsed.searchParams.get('page') || runtime.config.site.homeSlug
       const mode = parsed.searchParams.get('mode') || 'read'
@@ -178,16 +180,27 @@ export function createMarkdownRenderer(runtime) {
     }) || null
   }
 
-  function replaceTemplatePlaceholders(source, data) {
+  function replaceTemplatePlaceholders(source, data, maximumLength) {
     const values = new Map()
     data.args.forEach((value, index) => values.set(String(index + 1), value))
     for (const [key, value] of Object.entries(data.meta)) values.set(normalizeKey(key), value)
     values.set('template', data.name)
 
-    return String(source || '').replace(/\{\{\{\s*([^}|]+)\s*(?:\|\s*([^}]*?)\s*)?}}}/g, (_, key, fallback = '') => {
+    const text = String(source || '')
+    const parts = []
+    let cursor = 0
+    let length = 0
+    for (const match of text.matchAll(/\{\{\{\s*([^}|]+)\s*(?:\|\s*([^}]*?)\s*)?}}}/g)) {
+      const [, key, fallback = ''] = match
       const clean = normalizeKey(key)
-      return values.get(clean) || values.get(String(key).trim()) || fallback || ''
-    })
+      const value = values.get(clean) || values.get(key.trim()) || fallback
+      length += match.index - cursor + value.length
+      if (length > maximumLength) return null
+      parts.push(text.slice(cursor, match.index), value)
+      cursor = match.index + match[0].length
+    }
+    if (length + text.length - cursor > maximumLength) return null
+    return parts.length ? parts.join('') + text.slice(cursor) : text
   }
 
   function templateImageHtml(src, title = '', caption = '') {
@@ -353,11 +366,14 @@ export function createMarkdownRenderer(runtime) {
     const source = template.render || template.renderMarkdown || template.body || template.template || ''
     if (!source) return ''
 
-    const renderedSource = replaceTemplatePlaceholders(source, data)
     const expansion = options.expansion
-    if (++expansion.count > 1024 || (expansion.length += renderedSource.length) > 1024 * 1024) {
+    const renderedSource = ++expansion.count <= 1024
+      ? replaceTemplatePlaceholders(source, data, 1024 * 1024 - expansion.length)
+      : null
+    if (renderedSource === null) {
       return `<aside class="template-box">${escapeHtml(data.name)}: ${ui('limite de transclusão atingido', 'transclusion limit reached')}</aside>`
     }
+    expansion.length += renderedSource.length
     if (/^\s*:::/m.test(renderedSource) || /^\s*\{\{/m.test(renderedSource)) {
       return markdownToHtml(renderedSource, { ...options, templateDepth: (options.templateDepth || 0) + 1 })
     }
@@ -828,18 +844,20 @@ export function createMarkdownRenderer(runtime) {
   function safeBackgroundImage(value) {
     const clean = String(value || '').trim()
     if (!clean) return ''
-    try {
-      const parsed = new URL(clean, runtime.href)
-      if (['http:', 'https:'].includes(parsed.protocol)) return `url("${clean.replaceAll('"', '%22')}")`
-    } catch {}
-    return ''
+    const src = safeMediaSource(clean)
+    return src ? `url("${src.replaceAll('"', '%22').replaceAll('\\', '%5C')}")` : ''
   }
 
   function safeGradient(value) {
     const clean = String(value || '').trim()
     if (!/^(linear-gradient|radial-gradient)\(/i.test(clean)) return ''
-    if (/url\s*\(|expression\s*\(|javascript:/i.test(clean)) return ''
-    return clean.replace(/[<>]/g, '')
+    if (/[;"'{}<>\\]|\/\*|url\s*\(|expression\s*\(|javascript:/i.test(clean)) return ''
+    let depth = 0
+    for (let index = clean.indexOf('('); index < clean.length; index++) {
+      if (clean[index] === '(') depth++
+      if (clean[index] === ')' && --depth === 0) return index === clean.length - 1 ? clean : ''
+    }
+    return ''
   }
 
   function renderBackgroundBlock(argument, body, options = {}) {
@@ -871,7 +889,7 @@ export function createMarkdownRenderer(runtime) {
       const host = parsed.hostname.replace(/^www\./, '')
       let id = ''
       if (host === 'youtu.be') id = parsed.pathname.split('/').filter(Boolean)[0] || ''
-      if (host.endsWith('youtube.com')) {
+      if (host === 'youtube.com' || host.endsWith('.youtube.com')) {
         if (parsed.pathname.startsWith('/watch')) id = parsed.searchParams.get('v') || ''
         else if (parsed.pathname.startsWith('/embed/') || parsed.pathname.startsWith('/shorts/')) id = parsed.pathname.split('/').filter(Boolean)[1] || ''
       }
@@ -1189,7 +1207,7 @@ export function createMarkdownRenderer(runtime) {
         flushList()
 
         const templateLines = [clean]
-        while (!templateLines.join('\n').trim().endsWith('}}') && i + 1 < lines.length) {
+        while (!templateLines.at(-1).endsWith('}}') && i + 1 < lines.length) {
           i += 1
           templateLines.push(lines[i].trim())
         }

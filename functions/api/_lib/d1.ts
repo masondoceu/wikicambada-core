@@ -429,7 +429,7 @@ function normalizeEscapedBlockNewlines(value: string) {
   return output.join('\n')
 }
 
-function rowToPage(page: any, revisions: any[] = [], categories: string[] = [], aliases: any[] = [], redirects: string[] = [], source: { resolvedFrom?: string; resolvedBy?: 'alias' | 'redirect'; resolvedTitle?: string | null; resolvedFragment?: string; redirectRules?: Array<{ fromSlug: string; fragment: string }> } = {}) {
+function rowToPage(page: any, revisions: any[] = [], categories: string[] = [], aliases: any[] = [], redirects: string[] = [], source: { resolvedFrom?: string; resolvedBy?: 'alias' | 'redirect'; resolvedTitle?: string | null; resolvedFragment?: string; redirectRules?: Array<{ fromSlug: string; fragment: string }>; currentRevisionNumber?: number } = {}) {
   if (!page) return null
 
   return {
@@ -465,7 +465,8 @@ async function readPageRow(env: Env, slug: string) {
       pages.current_revision_id,
       pages.created_at,
       pages.updated_at,
-      revisions.content_markdown AS content
+      revisions.content_markdown AS content,
+      revisions.revision_number AS current_revision_number
     FROM pages
     LEFT JOIN revisions ON revisions.id = pages.current_revision_id
     WHERE pages.slug = ? AND pages.status = 'published'
@@ -578,6 +579,7 @@ async function hydratePage(env: Env, page: any, source: { resolvedFrom?: string;
 
   return rowToPage(page, revisions, categories, aliases, redirectRules.map(rule => rule.fromSlug), {
     ...source,
+    ...(!includeRevisions && { currentRevisionNumber: page.current_revision_number }),
     redirectRules
   })
 }
@@ -865,22 +867,23 @@ export async function readRandomPageSlug(env: Env, settings?: Record<string, any
   return row?.slug ? String(row.slug) : null
 }
 
-export async function indexableSlugCount(env: Env, settings: Record<string, any>) {
+export async function indexableSlugCount(env: Env, settings: Record<string, any>, reservedSlugs: string[]) {
   if (!env.DB) throw new EditorialError('Storage unavailable', 503)
-  const row = await env.DB.prepare(`SELECT COUNT(*) AS total FROM pages WHERE ${indexablePageSql(settings)}`).first<{ total: number }>()
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS total FROM pages WHERE ${indexablePageSql(settings, reservedSlugs)}`).bind(...reservedSlugs).first<{ total: number }>()
   return row?.total || 0
 }
 
-function indexablePageSql(settings: Record<string, any>) {
+function indexablePageSql(settings: Record<string, any>, reservedSlugs: string[]) {
   return `status = 'published' AND current_revision_id IS NOT NULL AND ${pageVisibilitySql(settings)}
-    AND slug NOT LIKE 'usuario/%' AND slug NOT LIKE 'discussao/%'`
+    AND slug NOT LIKE 'usuario/%' AND slug NOT LIKE 'discussao/%' AND slug NOT LIKE 'categoria/%'
+    ${reservedSlugs.length ? `AND LOWER(TRIM(slug)) NOT IN (${reservedSlugs.map(() => '?').join(',')})` : ''}`
 }
 
-export async function listIndexableSlugs(env: Env, settings: Record<string, any>, offset: number, limit: number) {
+export async function listIndexableSlugs(env: Env, settings: Record<string, any>, offset: number, limit: number, reservedSlugs: string[]) {
   if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const { results } = await env.DB.prepare(`
-    SELECT slug FROM pages WHERE ${indexablePageSql(settings)} ORDER BY slug LIMIT ? OFFSET ?
-  `).bind(limit, offset).all<{ slug: string }>()
+    SELECT slug FROM pages WHERE ${indexablePageSql(settings, reservedSlugs)} ORDER BY slug LIMIT ? OFFSET ?
+  `).bind(...reservedSlugs, limit, offset).all<{ slug: string }>()
   return results.map(({ slug }) => slug)
 }
 
@@ -3567,7 +3570,7 @@ export async function getSystemStatus(env: Env) {
   const cacheVersion = await getSetting(env, 'cache_version', { value: 0, updatedAt: null })
   const reloadVersion = await getSetting(env, 'reload_version', { value: 0, updatedAt: null })
   const publicVersion = (value: any) => ({ value: Number(value?.value || 0), updatedAt: value?.updatedAt || null })
-  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.1-indev.2' }
+  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.1' }
 }
 
 export async function forceSystemRefresh(env: Env, mode: 'cache' | 'reload', authorEmail: string) {

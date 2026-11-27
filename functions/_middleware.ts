@@ -1,10 +1,10 @@
 import { readAccessUser } from './api/_lib/access'
-import { getActiveIpRule, recordActivity, type Env } from './api/_lib/d1'
+import { getActiveIpRule, recordActivity } from './api/_lib/d1'
 import { error, localizeErrorResponse } from './api/_lib/response'
 import { seedInitialContent } from './api/_lib/initial-content'
-import type { ReaderData } from './_lib/read-document'
+import { readPublicConfig, type ReaderData, type ReaderEnv } from './_lib/read-document'
 
-type Context = EventContext<Env, string, ReaderData>
+type Context = EventContext<ReaderEnv, string, ReaderData>
 
 function isExemptPath(pathname: string) {
   return pathname.startsWith('/admin') ||
@@ -42,8 +42,15 @@ function applyHeaders(response: Response, pathname: string, privateMode = false)
 
 export async function onRequest(context: Context) {
   const url = new URL(context.request.url)
-  const language = url.pathname.startsWith('/api/') ? context.request.headers.get('x-wiki-language') || undefined : context.env.WIKI_INTERFACE_LANGUAGE
-  const respond = async (response: Response, privateMode = false) => applyHeaders(await localizeErrorResponse(response, language), url.pathname, privateMode)
+  const api = url.pathname.startsWith('/api/')
+  const privateMode = context.env.WIKI_ACCESS_MODE === 'private'
+  const respond = async (response: Response) => {
+    let language = api ? context.request.headers.get('x-wiki-language') || undefined : context.env.WIKI_INTERFACE_LANGUAGE
+    if (!api && !language && response.status >= 400 && response.headers.get('content-type')?.startsWith('application/json')) {
+      language = await readPublicConfig(context).then(config => config.site.interfaceLanguage, () => undefined)
+    }
+    return applyHeaders(await localizeErrorResponse(response, language), url.pathname, privateMode)
+  }
   if (context.env.WIKI_ACCESS_MODE && !['public', 'cloudflare-access', 'private'].includes(context.env.WIKI_ACCESS_MODE)) return respond(error('Invalid access mode', 503))
   if (url.pathname.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(context.request.method)) {
     const origin = context.request.headers.get('origin')
@@ -67,12 +74,11 @@ export async function onRequest(context: Context) {
   }
 
   const recoveryRoute = url.pathname === '/api/secure/admin/recovery'
-  const privateMode = context.env.WIKI_ACCESS_MODE === 'private'
   if (privateMode && (url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml')) {
     const response = url.pathname === '/robots.txt'
       ? new Response('User-agent: *\nDisallow: /\n', { headers: { 'content-type': 'text/plain; charset=utf-8' } })
       : new Response(null, { status: 404 })
-    return respond(response, true)
+    return respond(response)
   }
   if (context.env.DB && !recoveryRoute) {
     try {
@@ -99,5 +105,5 @@ export async function onRequest(context: Context) {
     response = error(status < 500 && cause instanceof Error ? cause.message : 'Service temporarily unavailable', status)
   }
   if (url.pathname.startsWith('/api/') && response.status >= 500) response = error('Service temporarily unavailable', response.status)
-  return respond(response, privateMode)
+  return respond(response)
 }

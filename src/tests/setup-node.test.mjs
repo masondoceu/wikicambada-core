@@ -206,7 +206,8 @@ test('Release contracts are checked even when hashes are valid', async () => {
     assert.throws(() => validateRelease(project, project.root), message)
   }
   const project = await fixture()
-  project.write('src/config/installation.json', { coreVersion: '1.1.1' })
+  const [major, minor, patch] = project.release().version.split('-')[0].split('.').map(Number)
+  project.write('src/config/installation.json', { coreVersion: `${major}.${minor}.${patch + 1}` })
   project.write('wikicambada-files.json', { files: releaseManifest(project.root) })
   assert.throws(() => validateRelease(project, project.root), /older than the installed version/)
 })

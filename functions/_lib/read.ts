@@ -163,8 +163,9 @@ export async function serveRead(context: ReaderContext): Promise<Response> {
       return present(page.title + ui(' — Histórico', ' — History'), renderer.historyHtml(page, revisions, reader) + paginate(100, revisions.nextOffset))
     }
 
-    const html = renderer.articleHtml(page, await renderContext(page.content))
     const canonical = /^(?:usuario|discussao)\//.test(page.slug) ? undefined : path
+    if (request.method === 'HEAD') return present(page.title, '', { slug: page.slug, canonical })
+    const html = renderer.articleHtml(page, await renderContext(page.content))
     return present(page.title, html, { slug: page.slug, canonical, description: editorialDescription(page.content) || page.subtitle, image: representativeImage(html) })
   } catch (cause) {
     const status = cause && typeof cause === 'object' && 'status' in cause && cause.status === 400 ? 400 : 503

@@ -7,7 +7,7 @@ import { adminSettingsHtml, fatalErrorHtml, footerHtml, historyHtml, searchHtml,
 test('The version page shows the product and version without implementation details', () => {
   const html = versionPageHtml()
   assert.match(html, /WikiCambada Core/)
-  assert.match(html, /1\.1\.1-indev\.2/)
+  assert.match(html, /v1\.1\.1<\/span>/)
   assert.doesNotMatch(html, /MediaWiki|Parsoid|Especial:Version|cache|Cache|recarregar|\/wiki\/especial\/versao/)
 })
 

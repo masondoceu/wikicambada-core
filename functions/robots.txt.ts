@@ -1,1 +1,1 @@
-export { serveRobots as onRequestGet } from './_lib/indexing'
+export { serveRobots as onRequestGet, serveRobots as onRequestHead } from './_lib/indexing'

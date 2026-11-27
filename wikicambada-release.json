@@ -1,8 +1,8 @@
 {
   "product": "WikiCambada Core",
-  "version": "1.1.1-indev.2",
-  "displayVersion": "v1.1.1-indev.2",
-  "channel": "development",
+  "version": "1.1.1",
+  "displayVersion": "v1.1.1",
+  "channel": "stable",
   "minimumUpgradeableVersion": "1.0.13",
   "configSchema": 1,
   "databaseSchema": 17,

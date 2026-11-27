@@ -65,7 +65,7 @@ export let SITE_CONFIG = structuredClone(DEFAULT_SITE_CONFIG)
 export let HOME_SLUG = SITE_CONFIG.site.homeSlug
 export let SLOGAN = SITE_CONFIG.site.tagline
 export let SITE_NAME = SITE_CONFIG.site.name
-export let APP_VERSION = 'v1.1.1-indev.2'
+export let APP_VERSION = 'v1.1.1'
 export let DEFAULT_RANDOM_SLUGS = [HOME_SLUG]
 export let GLOBAL_SETTINGS = structuredClone(DEFAULT_SITE_CONFIG.features)
 

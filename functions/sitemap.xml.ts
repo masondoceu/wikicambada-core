@@ -1,1 +1,1 @@
-export { serveSitemap as onRequestGet } from './_lib/indexing'
+export { serveSitemap as onRequestGet, serveSitemap as onRequestHead } from './_lib/indexing'

@@ -6,7 +6,11 @@ const auth = await loadFunction('functions/api/_lib/access.ts')
 const keys = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify'])
 const jwk = { ...await crypto.subtle.exportKey('jwk', keys.publicKey), kid: 'test' }
 const originalFetch = globalThis.fetch
-globalThis.fetch = async () => Response.json({ keys: [jwk] })
+let jwksRequests = 0
+globalThis.fetch = async () => {
+  jwksRequests++
+  return Response.json({ keys: [jwk] })
+}
 const env = { ACCESS_TEAM_DOMAIN: 'https://team.cloudflareaccess.com', ACCESS_AUD: 'wiki', ACCESS_STRICT: 'true' }
 async function request(payload = {}, header = {}) {
   const now = Math.floor(Date.now() / 1000)
@@ -15,6 +19,14 @@ async function request(payload = {}, header = {}) {
   const signature = Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keys.privateKey, new TextEncoder().encode(data))).toString('base64url')
   return new Request('https://wiki.example.com/api/secure/pages', { headers: { 'cf-access-jwt-assertion': `${data}.${signature}` } })
 }
+
+test('Expired or inapplicable Access tokens are rejected before loading signing keys', async () => {
+  const before = jwksRequests
+  for (const claims of [{ exp: 1 }, { iss: 'https://other.example.com' }, { aud: 'other-audience' }]) {
+    assert.equal((await auth.readAccessIdentity(await request(claims), env)).authenticated, false)
+  }
+  assert.equal(jwksRequests, before)
+})
 
 test('Access validates the signature, issuer, audience, exp, nbf, iat and algorithm', async () => {
   const DB = await database()

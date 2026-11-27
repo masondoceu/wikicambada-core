@@ -8,7 +8,7 @@
 
 # WikiCambada Core
 
-**WikiCambada Core** é um motor de wiki serverless feito para o ecossistema Cloudflare. Ele combina uma aplicação web estática com Pages Functions, D1, R2 e Cloudflare Access para oferecer artigos em Markdown, revisões, administração, mídia, busca, categorias, templates e colaboração sem manter um servidor tradicional.
+**WikiCambada Core** é um motor de wiki serverless feito para o ecossistema Cloudflare. Ele combina uma aplicação web com Pages Functions, D1, R2 e Cloudflare Access para oferecer artigos em Markdown, revisões, administração, mídia, busca, categorias, templates e colaboração sem manter um servidor tradicional.
 
 ## Índice
 
@@ -31,6 +31,7 @@
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Segurança](#segurança)
 - [Desenvolvimento](#desenvolvimento)
+- [Manutenção e assistência por IA](#manutenção-e-assistência-por-ia)
 - [Créditos](#créditos)
 - [Licença e direitos autorais](#licença-e-direitos-autorais)
 
@@ -50,6 +51,8 @@ Cada instalação mantém seus próprios dados, configuração, identidade visua
 ## Como funciona
 
 O frontend é servido pelo Cloudflare Pages. Rotas dinâmicas e APIs são executadas por Pages Functions. O conteúdo editorial fica no D1, enquanto imagens, vídeos e áudios ficam no R2. O Cloudflare Access autentica editores, moderadores e administradores; o Core mantém os cargos internos e as permissões editoriais.
+
+As Pages Functions renderizam artigos, categorias, arquivos, resultados de busca e históricos públicos em HTML. Essas rotas de leitura funcionam com JavaScript desativado e em navegadores textuais. Com JavaScript, a SPA mantém o primeiro artigo renderizado e usa o mesmo renderizador editorial nas próximas navegações e na edição. Edição, administração e controles interativos de mídia exigem JavaScript.
 
 ```text
 navegador
@@ -266,15 +269,19 @@ Variáveis relevantes:
 ```toml
 WIKI_SITE_NAME = "Minha Wiki"
 WIKI_SUPER_ADMIN_EMAIL = "admin@example.com"
-WIKI_CORE_VERSION = "v1.1.0-r2"
+WIKI_CORE_VERSION = "v1.1.1"
 PUBLIC_BASE_URL = "https://wiki.example.com"
 ```
+
+Os artigos públicos incluem uma URL canônica e metadados para mecanismos de busca e prévias de links. Defina a URL pública da wiki no setup para escolher o domínio canônico. Em `src/config/site.json`, defina `seo.indexing` como `false` para desativar a indexação, ou liste os prefixos de caminho a excluir em `seo.disallow`. Refaça o build dos assets públicos após editar a configuração. O sitemap contém páginas editoriais canônicas publicadas. Wikis privadas não têm sitemap público. As regras de acesso continuam valendo para todos os clientes.
+
+O Core usa os bindings de Pages, D1 e R2 existentes no plano gratuito. A capacidade depende das cotas de requisições, CPU e armazenamento da Cloudflare e do conteúdo servido. Meça artigos longos e páginas com muitas predefinições no ambiente de destino antes de publicar. [Limites do Workers](https://developers.cloudflare.com/workers/platform/limits/)
 
 ## Atualizações
 
 A experiência de atualização fica no próprio setup, mas usa um módulo separado. Isso permite reutilizar o mesmo motor no modo gráfico, em linha de comando e futuramente em automações.
 
-Na v1.1.0-r2, o setup aceita pacote ZIP local e:
+O setup aceita um pacote ZIP local e:
 
 1. valida a estrutura e os hashes do manifesto da release
 2. detecta arquivos do Core modificados localmente
@@ -299,7 +306,9 @@ Se o setup no Windows indicar um conflito com `README.md` ao atualizar de um pac
 node --input-type=module -e "import { readFileSync } from 'node:fs'; import { Project } from './src/setup/project.js'; import { updateFromBase64 } from './src/setup/updater.js'; const [wiki, zip, sha] = process.argv.slice(1); await updateFromBase64(new Project(wiki), readFileSync(zip, 'base64'), zip, sha)" -- "caminho/da/wiki-instalada" "caminho/do/core.zip" "SHA-256"
 ```
 
-Para gerar uma distribuição genérica, use `node setup.js package --output wikicambada-core-1.1.0-r2.zip`. O destino deve ser novo. O pacote inclui apenas o Core, configurações genéricas, migrations, testes, documentação e licença; não inclui os bindings, branding ou estado local da wiki. A verificação usa o mesmo mecanismo do atualizador. Os lançadores Unix recebem permissão de execução no ZIP. As bibliotecas TOML e ZIP estão incluídas em `src/setup/vendor.cjs`; ao alterá-las, regenere o bundle com `node src/scripts/build-setup-vendor.mjs`.
+A versão estável `1.1.1` usa o schema 17, assim como a `1.1.0-r2`. Após atualizar o Core, execute `npm ci` para instalar as dependências fixadas no novo lockfile.
+
+Para gerar uma distribuição genérica, use `node setup.js package --output wikicambada-core-1.1.1.zip`. O destino deve ser novo. O pacote inclui apenas o Core, configurações genéricas, migrations, testes, documentação e licença; não inclui os bindings, branding ou estado local da wiki. A verificação usa o mesmo mecanismo do atualizador. Os lançadores Unix recebem permissão de execução no ZIP. As bibliotecas TOML e ZIP estão incluídas em `src/setup/vendor.cjs`; ao alterá-las, regenere o bundle com `node src/scripts/build-setup-vendor.mjs`.
 
 Os hashes do manifesto verificam integridade, mas não autenticam o autor. A API local de atualização aceita `expectedSha256` para conferir um hash do ZIP obtido por um canal confiável. O projeto ainda não define uma infraestrutura de assinatura de releases.
 
@@ -455,6 +464,8 @@ Servidor local do Pages:
 npm run dev
 ```
 
+O servidor de desenvolvimento escuta apenas em loopback para manter a autenticação local na própria máquina. Para conferir a renderização híbrida, aplique as migrations locais do D1 e abra um artigo, seu histórico e um artigo inexistente com JavaScript desativado. Confira redirecionamentos, URLs canônicas, `robots.txt` e `sitemap.xml`. Com JavaScript ativado, confirme no painel de rede que o artigo inicial é buscado uma única vez e teste a navegação entre artigos.
+
 Verificação do projeto:
 
 ```bash
@@ -472,6 +483,14 @@ npm run build
 Os testes usam SQLite, D1/R2 locais do Miniflare e fixtures temporárias. Incluem o worker de Pages compilado, migrations pelo Wrangler local, interrupções de gravação, concorrência, recuperação HTTP com retomada, atualização do ZIP e seleção de assets. Não acessam recursos Cloudflare de produção. A consulta de saúde distingue o schema exigido do registro de migrations realmente encontrado no banco.
 
 As migrations ficam em `src/data/migrations/`. O histórico de versões está em [CHANGELOG.MD](../CHANGELOG.MD).
+
+## Manutenção e assistência por IA
+
+O WikiCambada Core é um projeto independente mantido por um único desenvolvedor.
+
+Para reduzir a carga de trabalho de manutenção, ferramentas de assistência por inteligência artificial são utilizadas para análise do repositório em modo somente leitura, elaboração de changelogs, documentação, traduções e análise de vulnerabilidades.
+
+O mantenedor permanece responsável pelas decisões do projeto, revisões, releases e distribuição.
 
 ## Créditos
 

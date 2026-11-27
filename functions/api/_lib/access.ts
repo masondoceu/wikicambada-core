@@ -164,6 +164,13 @@ async function verifyJwt(token: string, env: AccessEnv) {
 
   const parsed = parseJwt(token)
   if (!parsed || parsed.header.alg !== 'RS256' || typeof parsed.header.kid !== 'string' || parsed.header.crit !== undefined || parsed.header.b64 === false) return null
+  const { payload } = parsed
+  if (!payload || payload.iss !== teamDomain || !hasExpectedAudience(payload, audience)) return null
+
+  const now = Math.floor(Date.now() / 1000)
+  if (!Number.isFinite(payload.exp) || payload.exp <= now) return null
+  if (payload.nbf !== undefined && (!Number.isFinite(payload.nbf) || payload.nbf > now)) return null
+  if (payload.iat !== undefined && (!Number.isFinite(payload.iat) || payload.iat > now + 30 || payload.iat >= payload.exp)) return null
 
   const keys = await fetchJwks(teamDomain)
   const jwk = keys.find(key => (key as any).kid === parsed.header.kid) ||
@@ -185,16 +192,7 @@ async function verifyJwt(token: string, env: AccessEnv) {
     parsed.signedData
   )
 
-  if (!valid) return null
-
-  const now = Math.floor(Date.now() / 1000)
-  if (parsed.payload.iss !== teamDomain) return null
-  if (!hasExpectedAudience(parsed.payload, audience)) return null
-  if (!Number.isFinite(parsed.payload.exp) || parsed.payload.exp <= now) return null
-  if (parsed.payload.nbf !== undefined && (!Number.isFinite(parsed.payload.nbf) || parsed.payload.nbf > now)) return null
-  if (parsed.payload.iat !== undefined && (!Number.isFinite(parsed.payload.iat) || parsed.payload.iat > now + 30 || parsed.payload.iat >= parsed.payload.exp)) return null
-
-  return parsed.payload
+  return valid && payload.exp > Math.floor(Date.now() / 1000) ? payload : null
 }
 
 function baseUserFromPayload(payload: Record<string, any> | null, verified: boolean, env: AccessEnv): AccessUser | null {

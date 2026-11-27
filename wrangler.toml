@@ -11,7 +11,7 @@ PUBLIC_BASE_URL = ""
 WIKI_SITE_NAME = "Minha Wiki"
 WIKI_INTERFACE_LANGUAGE = "pt-BR"
 WIKI_SUPER_ADMIN_EMAIL = ""
-WIKI_CORE_VERSION = "v1.1.1-indev.2"
+WIKI_CORE_VERSION = "v1.1.1"
 WIKI_FEATURES_JSON = "{\"cloudflareBadge\":true,\"builtWithCloudflareBadge\":false}"
 
 [[d1_databases]]

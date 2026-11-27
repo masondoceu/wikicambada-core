@@ -8,7 +8,7 @@
 
 # WikiCambada Core
 
-**WikiCambada Core** is a serverless wiki engine designed for the Cloudflare ecosystem. It combines a static web application with Pages Functions, D1, R2 and Cloudflare Access to provide Markdown articles, revisions, administration, media, search, categories, templates and collaboration without maintaining a traditional server.
+**WikiCambada Core** is a serverless wiki engine designed for the Cloudflare ecosystem. It combines a web application with Pages Functions, D1, R2 and Cloudflare Access to provide Markdown articles, revisions, administration, media, search, categories, templates and collaboration without maintaining a traditional server.
 
 ## Contents
 
@@ -31,6 +31,7 @@
 - [Project structure](#project-structure)
 - [Security](#security)
 - [Development](#development)
+- [Maintenance and AI Assistance](#maintenance-and-ai-assistance)
 - [Credits](#credits)
 - [License and copyright](#license-and-copyright)
 
@@ -50,6 +51,8 @@ Each installation maintains its own data, configuration, visual identity, D1 dat
 ## How it works
 
 The frontend is served by Cloudflare Pages. Dynamic routes and APIs run on Pages Functions. Editorial content is stored in D1, while images, videos and audio are stored in R2. Cloudflare Access authenticates editors, moderators and administrators; the Core manages internal roles and editorial permissions.
+
+Pages Functions render articles, categories, files, search results and public revision history into HTML. These reading routes work in browsers with JavaScript disabled and in text browsers. When JavaScript is enabled, the SPA keeps the first rendered article and uses the same editorial renderer for subsequent navigation and editing. Editing, administration and interactive media controls require JavaScript.
 
 ```text
 browser
@@ -266,15 +269,19 @@ Relevant variables:
 ```toml
 WIKI_SITE_NAME = "My Wiki"
 WIKI_SUPER_ADMIN_EMAIL = "admin@example.com"
-WIKI_CORE_VERSION = "v1.1.0-r2"
+WIKI_CORE_VERSION = "v1.1.1"
 PUBLIC_BASE_URL = "https://wiki.example.com"
 ```
+
+Public articles include a canonical URL and metadata for search engines and link previews. Set the wiki's public URL in the setup to select the canonical domain. Set `seo.indexing` to `false` in `src/config/site.json` to turn off indexing, or list excluded path prefixes in `seo.disallow`. Rebuild the public assets after editing the configuration. The sitemap contains published canonical editorial pages. Private wikis have no public sitemap. Access rules still apply to every client.
+
+The Core uses the existing Pages, D1 and R2 bindings for the free plan. Its capacity depends on Cloudflare's request, CPU and storage quotas and on the content served. Measure long articles and pages with many templates on the intended deployment before publishing. [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
 
 ## Updates
 
 Updates are managed through the setup, but use a separate module. This allows the same engine to be reused in graphical mode, on the command line and in future automation.
 
-In v1.1.0-r2, the setup accepts a local distribution ZIP and:
+The setup accepts a local distribution ZIP and:
 
 1. validates the release manifest structure and hashes
 2. detects locally modified Core files
@@ -299,7 +306,9 @@ If the Windows setup reports a conflict with `README.md` when updating from an o
 node --input-type=module -e "import { readFileSync } from 'node:fs'; import { Project } from './src/setup/project.js'; import { updateFromBase64 } from './src/setup/updater.js'; const [wiki, zip, sha] = process.argv.slice(1); await updateFromBase64(new Project(wiki), readFileSync(zip, 'base64'), zip, sha)" -- "path/to/installed-wiki" "path/to/core.zip" "SHA-256"
 ```
 
-To generate a generic distribution, run `node setup.js package --output wikicambada-core-1.1.0-r2.zip`. The destination must not already exist. The package includes only the Core, generic configuration, migrations, tests, documentation and license; it does not include installation-specific bindings, branding or local state. Verification uses the same mechanism as the updater. Unix launchers receive executable permissions in the ZIP. The TOML and ZIP libraries are bundled in `src/setup/vendor.cjs`; when changing them, regenerate the bundle with `node src/scripts/build-setup-vendor.mjs`.
+The stable `1.1.1` uses database schema 17, as does `1.1.0-r2`. After updating the Core, run `npm ci` to install the dependencies pinned by the new lockfile.
+
+To generate a generic distribution, run `node setup.js package --output wikicambada-core-1.1.1.zip`. The destination must not already exist. The package includes only the Core, generic configuration, migrations, tests, documentation and license; it does not include installation-specific bindings, branding or local state. Verification uses the same mechanism as the updater. Unix launchers receive executable permissions in the ZIP. The TOML and ZIP libraries are bundled in `src/setup/vendor.cjs`; when changing them, regenerate the bundle with `node src/scripts/build-setup-vendor.mjs`.
 
 Manifest hashes verify integrity but do not authenticate the author. The local update API accepts `expectedSha256` to verify a ZIP hash obtained through a trusted channel. The project does not yet provide a release-signing infrastructure.
 
@@ -447,16 +456,6 @@ Pages deploys only `.wikicambada/public`, prepared by `npm run build`. Developme
 
 Core diagnostics and command-line output use English. The setup, wiki interface and editorial content each retain their own language settings. API clients can request English error text with `X-Wiki-Language: en`. Requests without the header retain the existing Portuguese responses, status codes and JSON fields.
 
-### Hybrid article rendering (Everywhere development build)
-
-Pages Functions render public reading routes with the same editorial parser as the SPA. For an initial article request, the browser keeps the rendered article and reads the public configuration and feature settings embedded in the document. The editor, preview and subsequent SPA navigation continue to run in the browser.
-
-Set the optional `seo.indexing` field in `src/config/site.json` to `false` to disable indexing, or set `seo.disallow` to an array of root-relative path prefixes to exclude selected routes. Rebuild the public assets after changing the configuration. The sitemap lists published canonical editorial URLs, while authentication and feature settings govern access independently.
-
-Use the development updater when testing an upgrade from 1.1.0-r2 in a disposable installation. The updater bundled with 1.1.0-r2 predates the `indev` version suffix.
-
-To check article rendering locally, apply the local D1 migrations and start `npm run dev`. Open a known article and its history with JavaScript disabled, check the status and metadata of an existing and a missing article, and follow a category link, a section link and a redirect. Check `/robots.txt` and `/sitemap.xml` in public and private configurations. With JavaScript enabled, use the network panel to confirm that the initial document does not trigger a second article fetch, then navigate to another article and back.
-
 In a fresh clone, `node setup.js verify` checks Core files and the local configuration structure. To install the lockfile dependencies, run `npm ci`. Use a separate copy to test wiki configuration, since the setup writes `site.json`, `installation.json` and `wrangler.toml` in the directory where it is installed.
 
 Local Pages server:
@@ -464,6 +463,8 @@ Local Pages server:
 ```bash
 npm run dev
 ```
+
+The development server binds to loopback by design so its local authentication stays on the same machine. To check hybrid rendering, apply the local D1 migrations and open an article, its history and a missing article with JavaScript disabled. Check redirects, canonical URLs, `robots.txt` and `sitemap.xml`. With JavaScript enabled, use the network panel to confirm that the initial article is fetched only once and test navigation between articles.
 
 Project verification:
 
@@ -482,6 +483,14 @@ npm run build
 Tests use SQLite, local Miniflare D1/R2 and temporary fixtures. They cover the compiled Pages worker, migrations through local Wrangler, interrupted writes, concurrency, resumable HTTP recovery, ZIP updates and asset selection. They do not access production Cloudflare resources. The health check distinguishes the required schema from migration records actually found in the database.
 
 Migrations are located in `src/data/migrations/`. Version history is available in [CHANGELOG.MD](CHANGELOG.MD).
+
+## Maintenance and AI Assistance
+
+WikiCambada Core is an independent project maintained by a single developer.
+
+To reduce the maintenance workload, AI-assisted tools are used for read-only repository analysis, changelog preparation, documentation, translations and vulnerability assessments.
+
+The maintainer remains responsible for project decisions, reviews, releases and distribution.
 
 ## Credits
 

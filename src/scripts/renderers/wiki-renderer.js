@@ -444,7 +444,7 @@ export function createWikiRenderer(runtime) {
   }
 
   function revisionCompareHtml(page, oldRevision, currentPage, user = {}) {
-    const currentRevisionNumber = (currentPage.revisions || []).find(revision => revision.isCurrent)?.revisionNumber || ui('atual', 'current')
+    const currentRevisionNumber = currentPage.currentRevisionNumber || (currentPage.revisions || []).find(revision => revision.isCurrent)?.revisionNumber || ui('atual', 'current')
 
     return `
       <article class="revision-compare-page">
@@ -460,7 +460,7 @@ export function createWikiRenderer(runtime) {
           </div>
           <div>
             <h2>${ui("Versão atual", "Current version")}</h2>
-            <p>${escapeHtml(currentRevisionNumber)} · editada em ${date(currentPage.updatedAt)}</p>
+            <p>${escapeHtml(currentRevisionNumber)} · ${ui('editada em', 'edited on')} ${date(currentPage.updatedAt)}</p>
           </div>
         </section>
 

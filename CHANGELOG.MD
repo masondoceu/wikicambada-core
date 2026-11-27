@@ -1,5 +1,16 @@
 # Changelog do WikiCambada Core
 
+## v1.1.1 · Everywhere
+
+- Stabilize hybrid rendering for public reading, with shared Markdown rendering, canonical links and search metadata.
+- Preserve English and Brazilian Portuguese interfaces and use English for developer diagnostics. Localize early document errors even when an older updater leaves the interface-language binding unset.
+- Keep file downloads as native links and show the actual current revision in server-rendered comparisons.
+- Keep HEAD status and redirects consistent with GET and exclude stored slugs shadowed by generated pages from the sitemap.
+- Bound template expansion during substitution and remove repeated scans of multiline templates.
+- Reject extra CSS declarations in editorial gradients and avoid loading Access signing keys for tokens with invalid claims.
+- Update Wrangler and its matching Worker types to address development dependency advisories.
+- Keep database schema 17 and the existing migration inventory.
+
 ## v1.1.1-indev.2 · Everywhere
 
 - Standardize technical diagnostics and test descriptions in English.

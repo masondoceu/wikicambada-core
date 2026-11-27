@@ -61,6 +61,8 @@ export async function renderReadDocument(
   const status = page.status || 200
   const canonical = page.canonical && status === 200 ? new URL(page.canonical, canonicalBase(config, url, env)).href : ''
   const indexable = Boolean(canonical && !data?.readerRole && !indexingBlocked(config, new URL(canonical).pathname) && env.WIKI_ACCESS_MODE !== 'private' && config.access.mode !== 'private')
+  const headers = { ...readerHeaders, 'content-type': 'text/html; charset=utf-8', ...(!indexable && { 'x-robots-tag': 'noindex, follow' }) }
+  if (request.method === 'HEAD') return new Response(null, { status, headers })
   const description = page.description || config.site.description || config.site.tagline
   const image = publicUrl(page.image, url)?.href
   const meta = (name: string, value: unknown, property = false) => value
@@ -112,10 +114,7 @@ export async function renderReadDocument(
     'history-tab': [page.slug, 'history', !restricted && enabled('pageHistory'), history ? 'active' : '']
   } as const
 
-  const response = new Response(shell.body, {
-    status,
-    headers: { ...readerHeaders, 'content-type': 'text/html; charset=utf-8', ...(!indexable && { 'x-robots-tag': 'noindex, follow' }) }
-  })
+  const response = new Response(shell.body, { status, headers })
   const rewriter = new HTMLRewriter()
     .on('html', { element(element) {
       element.setAttribute('lang', config.site.language === 'en' ? 'en' : 'pt-BR')

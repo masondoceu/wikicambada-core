@@ -107,7 +107,7 @@ export class Project {
     const file = this.file('wrangler.toml'), old = fs.existsSync(file) ? vendor.toml.parse(fs.readFileSync(file, 'utf8')) : {}, previous = reuse ? old : {}, { site, access, cloudflare } = config
     const database = (old.d1_databases || []).find(item => item.binding === 'DB') || {}
     const reuseId = reuse && database.database_name === cloudflare.databaseName
-    const generated = deepMerge(previous, { name: cloudflare.projectName, compatibility_date: old.compatibility_date || '2026-06-22', pages_build_output_dir: '.wikicambada/public', vars: { ACCESS_TEAM_DOMAIN: reuse ? old.vars?.ACCESS_TEAM_DOMAIN || '' : '', ACCESS_AUD: reuse ? old.vars?.ACCESS_AUD || '' : '', ACCESS_STRICT: String(access.strict), WIKI_ACCESS_MODE: access.mode, PUBLIC_BASE_URL: site.baseUrl, WIKI_SITE_NAME: site.name, WIKI_INTERFACE_LANGUAGE: site.interfaceLanguage, WIKI_SUPER_ADMIN_EMAIL: access.superAdminEmail, WIKI_CORE_VERSION: this.release().displayVersion || 'v1.1.1-indev.2', WIKI_FEATURES_JSON: JSON.stringify(config.features) } })
+    const generated = deepMerge(previous, { name: cloudflare.projectName, compatibility_date: old.compatibility_date || '2026-06-22', pages_build_output_dir: '.wikicambada/public', vars: { ACCESS_TEAM_DOMAIN: reuse ? old.vars?.ACCESS_TEAM_DOMAIN || '' : '', ACCESS_AUD: reuse ? old.vars?.ACCESS_AUD || '' : '', ACCESS_STRICT: String(access.strict), WIKI_ACCESS_MODE: access.mode, PUBLIC_BASE_URL: site.baseUrl, WIKI_SITE_NAME: site.name, WIKI_INTERFACE_LANGUAGE: site.interfaceLanguage, WIKI_SUPER_ADMIN_EMAIL: access.superAdminEmail, WIKI_CORE_VERSION: this.release().displayVersion || 'v1.1.1', WIKI_FEATURES_JSON: JSON.stringify(config.features) } })
     if (config.initialContent) generated.vars.WIKI_INITIAL_CONTENT = JSON.stringify(config.initialContent)
     else if (!reuse) delete generated.vars.WIKI_INITIAL_CONTENT
     const db = { ...(reuse ? database : {}), binding: 'DB', database_name: cloudflare.databaseName, database_id: reuseId ? database.database_id || '' : '', preview_database_id: reuseId ? database.preview_database_id || database.database_id || '' : '', migrations_dir: 'src/data/migrations', migrations_table: 'd1_migrations' }
@@ -119,7 +119,7 @@ export class Project {
   generatePackage(config, packageName = config.cloudflare.projectName) {
     checkAncestors(this.file('package.json')); checkAncestors(this.file('package-lock.json'))
     const pkg = this.read('package.json'), name = config.cloudflare.projectName, database = config.cloudflare.databaseName
-    Object.assign(pkg, { name: packageName, version: this.release().version || '1.1.1-indev.2', private: true })
+    Object.assign(pkg, { name: packageName, version: this.release().version || '1.1.1', private: true })
     pkg.scripts = { ...pkg.scripts, test: 'node src/scripts/test.mjs', typecheck: 'tsc --pretty false', build: 'node src/scripts/build-public.mjs', predev: 'npm run build', predeploy: 'npm run build', dev: 'node src/scripts/dev.mjs', deploy: `wrangler pages deploy .wikicambada/public --project-name ${name}`, 'db:migrations:apply:local': `wrangler d1 migrations apply ${database} --local`, 'db:migrations:apply:remote': `wrangler d1 migrations apply ${database} --remote`, setup: 'node setup.js', verify: 'node setup.js verify' }
     this.write('package.json', pkg)
     const lock = this.read('package-lock.json')
@@ -153,7 +153,7 @@ export class Project {
         config.schemaVersion = 1
         this.write('src/config/site.json', config); this.generateWrangler(config, intent !== 'new'); this.generatePackage(config)
         const installation = this.installation(), now = new Date().toISOString()
-        Object.assign(installation, { formatVersion: 1, installationId: safeSlug(config.site.shortName), distribution: presetId, coreVersion: this.release().version || '1.1.1-indev.2', configSchema: 1, databaseSchema: intent === 'new' ? null : installation.databaseSchema ?? null, requiredDatabaseSchema: 17, updateChannel: ['stable', 'beta', 'development'].includes(payload.updateChannel || installation.updateChannel) ? payload.updateChannel || installation.updateChannel : 'stable', lastUpdatedAt: now })
+        Object.assign(installation, { formatVersion: 1, installationId: safeSlug(config.site.shortName), distribution: presetId, coreVersion: this.release().version || '1.1.1', configSchema: 1, databaseSchema: intent === 'new' ? null : installation.databaseSchema ?? null, requiredDatabaseSchema: 17, updateChannel: ['stable', 'beta', 'development'].includes(payload.updateChannel || installation.updateChannel) ? payload.updateChannel || installation.updateChannel : 'stable', lastUpdatedAt: now })
         installation.createdAt ||= now
         this.write('src/config/installation.json', installation)
         this.write('.wikicambada/state.json', { managedBy: 'WikiCambada Core setup', coreVersion: installation.coreVersion, configSchema: 1, databaseSchema: installation.databaseSchema, requiredDatabaseSchema: 17, lastConfiguredAt: now })
