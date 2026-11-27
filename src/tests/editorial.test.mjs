@@ -5,7 +5,7 @@ import { database, loadFunction } from './helpers.mjs'
 const core = await loadFunction('functions/api/_lib/d1.ts')
 const input = { title: 'Alpha', content: 'conteúdo', summary: 'teste', categories: [], aliases: ['Primeiro'], redirects: ['Inicial'], expectedRevisionId: null }
 
-test('gravação e índices são revertidos quando uma etapa falha', async () => {
+test('A failed write rolls back the revision and indexes', async () => {
   const DB = await database()
   DB.fail = sql => sql.includes('INSERT INTO page_search')
   await assert.rejects(core.writePage({ DB }, 'alpha', input, 'editor@example.com'))
@@ -13,7 +13,7 @@ test('gravação e índices são revertidos quando uma etapa falha', async () =>
   DB.sqlite.close()
 })
 
-test('duas edições sobre a mesma revisão aceitam somente uma gravação', async () => {
+test('Only one edit can commit against the same base revision', async () => {
   const DB = await database()
   const first = await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
   const changes = { ...input, expectedRevisionId: first.currentRevisionId, content: 'alterado' }
@@ -24,7 +24,7 @@ test('duas edições sobre a mesma revisão aceitam somente uma gravação', asy
   DB.sqlite.close()
 })
 
-test('páginas deletadas ou bloqueadas recusam gravações também na persistência', async () => {
+test('Storage rejects writes to deleted or locked pages', async () => {
   const DB = await database()
   const page = await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
   DB.sqlite.prepare("UPDATE pages SET status = 'deleted'").run()
@@ -35,7 +35,7 @@ test('páginas deletadas ou bloqueadas recusam gravações também na persistên
   DB.sqlite.close()
 })
 
-test('categorias históricas vazias não herdam categorias atuais', async () => {
+test('Empty historical categories do not inherit current categories', async () => {
   const DB = await database()
   const page = await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
   await core.writePage({ DB }, 'alpha', { ...input, expectedRevisionId: page.currentRevisionId, categories: ['Nova'] }, 'editor@example.com')
@@ -45,7 +45,7 @@ test('categorias históricas vazias não herdam categorias atuais', async () => 
   DB.sqlite.close()
 })
 
-test('subtítulo histórico vazio não herda o subtítulo atual', async () => {
+test('An empty historical subtitle does not inherit the current subtitle', async () => {
   const DB = await database()
   const page = await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
   await core.writePage({ DB }, 'alpha', { ...input, subtitle: 'Atual', expectedRevisionId: page.currentRevisionId }, 'editor@example.com')
@@ -55,7 +55,7 @@ test('subtítulo histórico vazio não herda o subtítulo atual', async () => {
   DB.sqlite.close()
 })
 
-test('renomeação editorial exige administrador e preserva histórico e URL antiga', async () => {
+test('Renaming requires an administrator and preserves history and the old URL', async () => {
   const DB = await database()
   const page = await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
   await assert.rejects(core.writePage({ DB }, 'beta', { ...input, sourceSlug: 'alpha', expectedRevisionId: page.currentRevisionId }, 'editor@example.com'), { status: 403 })
@@ -69,7 +69,7 @@ test('renomeação editorial exige administrador e preserva histórico e URL ant
   DB.sqlite.close()
 })
 
-test('histórico paginado permite consultar todas as revisões', async () => {
+test('Paginated history exposes every revision', async () => {
   const DB = await database()
   try {
     const page = await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
@@ -89,7 +89,7 @@ test('histórico paginado permite consultar todas as revisões', async () => {
   } finally { DB.sqlite.close() }
 })
 
-test('desativar categorias não apaga metadados durante uma edição', async () => {
+test('Disabling categories does not clear metadata when editing', async () => {
   const DB = await database()
   const page = await core.writePage({ DB }, 'alpha', { ...input, categories: ['Preservada'] }, 'editor@example.com')
   const updated = await core.writePage({ DB, WIKI_FEATURES_JSON: '{"categories":false}' }, 'alpha', { ...input, categories: [], expectedRevisionId: page.currentRevisionId }, 'editor@example.com')
@@ -98,7 +98,7 @@ test('desativar categorias não apaga metadados durante uma edição', async () 
   DB.sqlite.close()
 })
 
-test('renomeações administrativas concorrentes não sobrescrevem a mesma origem', async () => {
+test('Concurrent administrative renames cannot overwrite the same source', async () => {
   const DB = await database()
   try {
     await core.writePage({ DB }, 'alpha', input, 'editor@example.com')
@@ -111,7 +111,7 @@ test('renomeações administrativas concorrentes não sobrescrevem a mesma orige
   } finally { DB.sqlite.close() }
 })
 
-test('renomeação e restauração não consultam novamente o D1 depois de confirmar a gravação', async () => {
+test('Rename and restore do not query D1 again after committing', async () => {
   const DB = await database()
   try {
     await core.writePage({ DB }, 'alpha', input, 'editor@example.com')

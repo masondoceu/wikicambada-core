@@ -1,17 +1,30 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SITE_CONFIG, GLOBAL_SETTINGS, applySiteConfigToDocument } from '../scripts/core/config.js'
-import { setInterfaceLanguage } from '../scripts/core/i18n.js'
+import { diagnosticDetail, setInterfaceLanguage } from '../scripts/core/i18n.js'
 import { adminSettingsHtml, fatalErrorHtml, footerHtml, historyHtml, searchHtml, versionPageHtml } from '../scripts/renderers/wiki-renderer.js'
 
-test('página de versão preserva identidade e versão sem explicações de implementação', () => {
+test('The version page shows the product and version without implementation details', () => {
   const html = versionPageHtml()
   assert.match(html, /WikiCambada Core/)
-  assert.match(html, /1\.1\.1-indev\.1/)
+  assert.match(html, /1\.1\.1-indev\.2/)
   assert.doesNotMatch(html, /MediaWiki|Parsoid|Especial:Version|cache|Cache|recarregar|\/wiki\/especial\/versao/)
 })
 
-test('badge da Cloudflare respeita configuração, padrão legado e independência da badge do Core', () => {
+test('The browser presents an English diagnostic in the selected interface language', () => {
+  const before = globalThis.document
+  const error = new Error('Invalid write response')
+  try {
+    globalThis.document = { documentElement: {} }
+    setInterfaceLanguage('en')
+    assert.equal(diagnosticDetail(error), 'Invalid write response')
+    setInterfaceLanguage('pt-BR')
+    assert.equal(diagnosticDetail(error), 'resposta de gravação inválida')
+    assert.equal(error.message, 'Invalid write response')
+  } finally { globalThis.document = before }
+})
+
+test('The Cloudflare badge honors configuration and legacy defaults independently of the Core badge', () => {
   const features = { ...SITE_CONFIG.features }
   const globals = { ...GLOBAL_SETTINGS }
   try {
@@ -42,7 +55,7 @@ test('badge da Cloudflare respeita configuração, padrão legado e independênc
   }
 })
 
-test('badges Cloudflare são independentes, acessíveis e mantêm links externos seguros', () => {
+test('Cloudflare badges are independent and accessible and use safe external links', () => {
   const features = { ...SITE_CONFIG.features }, globals = { ...GLOBAL_SETTINGS }
   try {
     const page = { slug: 'alpha' }
@@ -73,7 +86,7 @@ test('badges Cloudflare são independentes, acessíveis e mantêm links externos
   }
 })
 
-test('histórico e administração seguem o idioma configurado sem traduzir conteúdo', () => {
+test('History and administration use the configured interface language without translating content', () => {
   const previous = globalThis.document
   globalThis.document = { documentElement: {} }
   try {
@@ -89,6 +102,9 @@ test('histórico e administração seguem o idioma configurado sem traduzir cont
     assert.match(settings, /Public history/)
     assert.doesNotMatch(settings, /Páginas de discussão|Histórico público|Categorias em artigos/)
     assert.doesNotMatch(searchHtml('missing', [], { authenticated: true, canEdit: false }), /\/edit\//)
+    const search = searchHtml('alpha', [{ ...page, exact: true, matchType: 'redirecionamento' }])
+    assert.match(search, /exact match by redirect/)
+    assert.match(search, /Artigo em português/)
     assert.match(fatalErrorHtml({ status: 401 }), /Sign-in required/)
     assert.match(fatalErrorHtml({ status: 403 }), /Content unavailable/)
     assert.match(fatalErrorHtml({ status: 503 }), /Service temporarily unavailable/)
@@ -96,7 +112,7 @@ test('histórico e administração seguem o idioma configurado sem traduzir cont
   } finally { setInterfaceLanguage('pt-BR'); globalThis.document = previous }
 })
 
-test('tema inicial, logo escuro e preferência salva têm precedência correta', async () => {
+test('The initial theme, dark logo and saved preference have the expected precedence', async () => {
   const previous = { document: globalThis.document, window: globalThis.window, localStorage: globalThis.localStorage, Image: globalThis.Image }
   const themeBefore = SITE_CONFIG.appearance.defaultTheme
   const brandingBefore = { ...SITE_CONFIG.branding }
@@ -129,7 +145,7 @@ test('tema inicial, logo escuro e preferência salva têm precedência correta',
   } finally { SITE_CONFIG.appearance.defaultTheme = themeBefore; Object.assign(SITE_CONFIG.branding, brandingBefore); delete SITE_CONFIG.branding.logoDark; Object.assign(globalThis, previous) }
 })
 
-test('as famílias padrão e migrada deixam o preset controlar o texto, preservando famílias personalizadas', () => {
+test('Preset fonts control the body by default and preserve custom font families', () => {
   const previous = globalThis.document, previousFonts = SITE_CONFIG.appearance.fonts
   const properties = new Map()
   globalThis.document = {

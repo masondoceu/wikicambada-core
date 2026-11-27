@@ -4,6 +4,10 @@ const messages = {
     'common.next': 'Próximo',
     'pages.all': 'Todas as páginas',
     'shell.navigation': 'Navegação',
+    'shell.sidebarLabel': 'Navegação lateral',
+    'shell.mainMenuLabel': 'Menu principal',
+    'shell.namespaceLabel': 'Abas de namespace',
+    'shell.pageActionsLabel': 'Ações da página',
     'shell.settings': 'Configurações',
     'shell.theme': 'Tema',
     'shell.font': 'Fonte',
@@ -78,6 +82,10 @@ const messages = {
     'common.next': 'Next',
     'pages.all': 'All pages',
     'shell.navigation': 'Navigation',
+    'shell.sidebarLabel': 'Sidebar navigation',
+    'shell.mainMenuLabel': 'Main menu',
+    'shell.namespaceLabel': 'Namespace tabs',
+    'shell.pageActionsLabel': 'Page actions',
     'shell.settings': 'Settings',
     'shell.theme': 'Theme',
     'shell.font': 'Font',
@@ -169,6 +177,18 @@ export function t(key, values = {}) {
   return translate(activeLanguage, key, values)
 }
 
+export function localizeDiagnostic(message, catalog, translateValue = value => value) {
+  if (Object.hasOwn(catalog, message)) return catalog[message]
+  for (const [pattern, translation] of Object.entries(catalog)) {
+    if (!pattern.includes('{0}')) continue
+    const [prefix, suffix] = pattern.split('{0}')
+    if (!message.startsWith(prefix) || !message.endsWith(suffix) || message.length < prefix.length + suffix.length) continue
+    const value = message.slice(prefix.length, message.length - suffix.length)
+    return translation.replace('{0}', () => translateValue(value, pattern))
+  }
+  return message
+}
+
 export function translate(language, key, values = {}) {
   const template = messages[language]?.[key] ?? messages['pt-BR']?.[key] ?? key
   return Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{{${name}}}`, String(value ?? '')), template)
@@ -187,4 +207,48 @@ export function applyTranslations(root = document) {
   root.querySelectorAll('[data-i18n-title]').forEach(element => {
     element.setAttribute('title', t(element.dataset.i18nTitle))
   })
+}
+
+const clientDiagnostics = {
+  "Empty API response": "resposta vazia da api",
+  "Invalid API response": "resposta inválida da api",
+  "Could not connect to the wiki": "não foi possível conectar à wiki",
+  "Invalid file response": "resposta de arquivo inválida",
+  "Invalid file listing response": "resposta de arquivos inválida",
+  "Invalid activity response": "resposta de atividade inválida",
+  "Invalid search response": "resposta de busca inválida",
+  "Invalid category response": "resposta de categoria inválida",
+  "Invalid category listing response": "resposta de categorias inválida",
+  "Invalid settings response": "resposta de configurações inválida",
+  "Invalid write response": "resposta de gravação inválida",
+  "Invalid history response": "resposta de histórico inválida",
+  "Invalid page listing response": "resposta de listagem inválida",
+  "Invalid trash response": "resposta de lixeira inválida",
+  "Invalid page response": "resposta de página inválida",
+  "Invalid IP rule response": "resposta de regras inválida",
+  "Invalid restore response": "resposta de restauração inválida",
+  "Invalid system status response": "resposta de sistema inválida",
+  "Invalid template response": "resposta de templates inválida",
+  "Invalid upload response": "resposta de upload inválida",
+  "Invalid random page response": "resposta de página aleatória inválida",
+  "Base revision required": "revisão-base obrigatória",
+  "The proposal was not stored": "a proposta não foi armazenada",
+  "Invalid settings API response": "configurações inválidas da api"
+}
+
+export function diagnosticDetail(error) {
+  const message = error?.message || ''
+  return activeLanguage === 'en' || !Object.hasOwn(clientDiagnostics, message) ? message : clientDiagnostics[message]
+}
+
+const searchLabels = {
+  'resultado': 'result',
+  'título ou URL': 'title or URL',
+  'redirecionamento': 'redirect',
+  'conteúdo': 'content',
+  'texto': 'text'
+}
+
+export function searchMatchLabel(value, language = activeLanguage) {
+  return language === 'en' && Object.hasOwn(searchLabels, value) ? searchLabels[value] : value
 }

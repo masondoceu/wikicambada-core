@@ -9,6 +9,7 @@ export type Env = {
   WIKI_LOCAL_AUTH_SECRET?: string
   WIKI_INITIAL_CONTENT?: string
   WIKI_ACCESS_MODE?: string
+  WIKI_INTERFACE_LANGUAGE?: string
   DISCORD_EDIT_WEBHOOK_URL?: string
   PUBLIC_BASE_URL?: string
   WIKI_CORE_VERSION?: string
@@ -370,7 +371,7 @@ async function nextFileSlug(env: Env, filename: string, fallbackId: string, pref
   let index = 2
 
   while (await fileSlugExists(env, candidate)) {
-    if (requested) throw new EditorialError('já existe um arquivo com essa URL', 409)
+    if (requested) throw new EditorialError('A file already uses this URL', 409)
     candidate = `${base}-${index}`
     index += 1
   }
@@ -632,13 +633,13 @@ function pageVisibilitySql(settings: Record<string, any>) {
 }
 
 export async function pageListStats(env: Env, includeDeleted = false, settings?: Record<string, any>) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const filter = includeDeleted ? "pages.status IN ('published', 'deleted', 'draft')" : "pages.status = 'published' AND " + pageVisibilitySql(settings ?? await getGlobalSettings(env))
   return env.DB.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM((SELECT COUNT(*) FROM revisions WHERE page_id = pages.id)), 0) AS revisions FROM pages WHERE ${filter}`).first<{ total: number, revisions: number }>()
 }
 
 export async function lookupPageSlugs(env: Env, values: string[]) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   if (!values.length) return []
   const settings = await getGlobalSettings(env)
   const wanted = values.map(normalizeSlug)
@@ -865,7 +866,7 @@ export async function readRandomPageSlug(env: Env, settings?: Record<string, any
 }
 
 export async function indexableSlugCount(env: Env, settings: Record<string, any>) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const row = await env.DB.prepare(`SELECT COUNT(*) AS total FROM pages WHERE ${indexablePageSql(settings)}`).first<{ total: number }>()
   return row?.total || 0
 }
@@ -876,7 +877,7 @@ function indexablePageSql(settings: Record<string, any>) {
 }
 
 export async function listIndexableSlugs(env: Env, settings: Record<string, any>, offset: number, limit: number) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const { results } = await env.DB.prepare(`
     SELECT slug FROM pages WHERE ${indexablePageSql(settings)} ORDER BY slug LIMIT ? OFFSET ?
   `).bind(limit, offset).all<{ slug: string }>()
@@ -1011,8 +1012,8 @@ function getMarkdownBlockValidationErrors(content: string) {
     if (clean === ':::') componentOpenLine = 0
   }
 
-  if (insideCodeFence) errors.push('há um bloco de código sem fechamento')
-  if (componentOpenLine) errors.push(`há um bloco ::: sem fechamento perto da linha ${componentOpenLine}`)
+  if (insideCodeFence) errors.push('An unclosed code block was found')
+  if (componentOpenLine) errors.push(`An unclosed ::: block was found near line ${componentOpenLine}`)
 
   return errors
 }
@@ -1023,24 +1024,24 @@ function validatePageInput(input: PageInput, options: { requireSummary?: boolean
   const content = normalizeEscapedBlockNewlines(String(input.content || ''))
   const summary = String(input.summary || '').trim()
 
-  if (!title) errors.push('o título é obrigatório')
-  if (!content.trim()) errors.push('o conteúdo é obrigatório')
-  if (title.length > 180) errors.push('o título é longo demais')
-  if (content.length > 512 * 1024) errors.push('o conteúdo excede o limite permitido')
-  if (options.requireSummary && !summary) errors.push('o resumo da edição é obrigatório')
-  if (summary.length > 500) errors.push('o resumo da edição é longo demais')
+  if (!title) errors.push('A title is required')
+  if (!content.trim()) errors.push('Content is required')
+  if (title.length > 180) errors.push('The title is too long')
+  if (content.length > 512 * 1024) errors.push('The content exceeds the allowed size')
+  if (options.requireSummary && !summary) errors.push('An edit summary is required')
+  if (summary.length > 500) errors.push('The edit summary is too long')
 
   errors.push(...getMarkdownBlockValidationErrors(content))
 
   const unresolvedWikiOpen = (content.match(/\[\[/g) || []).length
   const unresolvedWikiClose = (content.match(/\]\]/g) || []).length
-  if (unresolvedWikiOpen !== unresolvedWikiClose) errors.push('há um link wiki [[ ]] incompleto')
+  if (unresolvedWikiOpen !== unresolvedWikiClose) errors.push('An incomplete wiki link [[ ]] was found')
 
-  if (errors.length) throw new EditorialError(`edição recusada: ${errors.join('; ')}`, 400)
+  if (errors.length) throw new EditorialError(`Edit rejected: ${errors.join('; ')}`, 400)
 }
 
 export async function writePage(env: Env, slug: string, input: PageInput, authorEmail: string, authorName: string | null = null, approval?: { id: string, reviewerName: string, creditMode: string }) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const statements: D1PreparedStatement[] = []
 
   const now = new Date().toISOString()
@@ -1048,9 +1049,9 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
   const title = String(input.title || '').trim()
   const content = normalizeEscapedBlockNewlines(String(input.content || ''))
   const canonicalSlug = slugFromTitle(slug)
-  if (!canonicalSlug) throw new EditorialError('slug inválido', 400)
-  if (!(await publicPageEnabled(env, canonicalSlug))) throw new EditorialError('conteúdo indisponível', 403)
-  if (isReservedFilePageSlug(canonicalSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
+  if (!canonicalSlug) throw new EditorialError('Invalid slug', 400)
+  if (!(await publicPageEnabled(env, canonicalSlug))) throw new EditorialError('Content unavailable', 403)
+  if (isReservedFilePageSlug(canonicalSlug)) throw new EditorialError('The /wiki/arquivo/ namespace is reserved for media uploads', 403)
 
   let storageSlug = canonicalSlug
   const existing = await findStoredPageSlug(env, input.sourceSlug || slug, 'any', { preferCanonical: true })
@@ -1061,11 +1062,11 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
   const renaming = Boolean(input.sourceSlug && slugFromTitle(input.sourceSlug) !== canonicalSlug)
   if (renaming) {
     const actor: any = await env.DB.prepare('SELECT role, status FROM editor_profiles WHERE email = ?').bind(authorEmail).first()
-    if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actor.role)) throw new EditorialError('renomeação restrita a administradores', 403)
+    if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actor.role)) throw new EditorialError('Renaming is restricted to administrators', 403)
   }
   let legacyRedirect: D1PreparedStatement | null = null
-  if (existingDetails?.is_locked) throw new EditorialError('página bloqueada', 403)
-  if (existingDetails && existingDetails.status !== 'published') throw new EditorialError('a página precisa ser restaurada antes de receber edições', 403)
+  if (existingDetails?.is_locked) throw new EditorialError('Page locked', 403)
+  if (existingDetails && existingDetails.status !== 'published') throw new EditorialError('Restore the page before editing it', 403)
   const categories = (await globalSettingEnabled(env, 'categories')) ? input.categories || [] : existingDetails ? await readPageCategories(env, existingDetails.id) : []
   const expected = 'expectedRevisionId' in input ? input.expectedRevisionId : existingDetails?.current_revision_id || null
   const guardId = crypto.randomUUID()
@@ -1093,7 +1094,7 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
       }
       existingDetails.slug = canonicalSlug
     } else {
-      if (renaming) throw new EditorialError('já existe uma página com esse slug', 409)
+      if (renaming) throw new EditorialError('A page already uses this slug', 409)
       storageSlug = String(existingDetails.slug || canonicalSlug)
     }
   }
@@ -1182,8 +1183,8 @@ export async function writePage(env: Env, slug: string, input: PageInput, author
   statements.push(env.DB.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId))
   try { await env.DB.batch(statements) }
   catch (cause) {
-    if (String(cause).includes('wiki_recovery_locked')) throw new EditorialError('recuperação em andamento', 503)
-    if (String(cause).includes('wiki_write_conflict') || String(cause).includes('UNIQUE constraint failed: pages.slug') || String(cause).includes('UNIQUE constraint failed: revisions.page_id')) throw new EditorialError('a página foi modificada; revise o conflito antes de salvar')
+    if (String(cause).includes('wiki_recovery_locked')) throw new EditorialError('Recovery in progress', 503)
+    if (String(cause).includes('wiki_write_conflict') || String(cause).includes('UNIQUE constraint failed: pages.slug') || String(cause).includes('UNIQUE constraint failed: revisions.page_id')) throw new EditorialError('The page has changed. Review the conflict before saving')
     throw cause
   }
   return { id: pageId, slug: storageSlug, title, subtitle: input.subtitle || '', content, categories, currentRevisionId: revisionId, revisionNumber, updatedAt: now, aliases: input.aliases || [], redirects: input.redirects || [] }
@@ -1196,7 +1197,7 @@ async function commitPageState(env: Env, pageId: string, status: string, stateme
     (SELECT 1 FROM pages WHERE id = ? AND status = ? AND (? = 0 OR current_revision_id IS ?) AND (? IS NULL OR (slug = ? AND title = ?))) THEN 1 ELSE 0 END)`).bind(guardId, pageId, status, expectedRevisionId === undefined ? 0 : 1, expectedRevisionId || null, expectedPage?.slug || null, expectedPage?.slug || null, expectedPage?.title || null)
   try { await env.DB!.batch([guard, ...statements, env.DB!.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId)]) }
   catch (cause) {
-    if (String(cause).includes('wiki_write_conflict')) throw new EditorialError('o estado da página foi modificado')
+    if (String(cause).includes('wiki_write_conflict')) throw new EditorialError('The page state has changed')
     throw cause
   }
 }
@@ -1229,7 +1230,7 @@ type PageReadOptions = { settings?: Record<string, any>; page?: NonNullable<Awai
 
 export async function listPageRevisions(env: Env, slug: string, options: PageReadOptions & { offset?: number } = {}) {
   if (!env.DB) return null
-  if (!(options.settings ? nestedSettingValue(options.settings, 'pageHistory') : await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
+  if (!(options.settings ? nestedSettingValue(options.settings, 'pageHistory') : await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('History disabled', 403)
 
   const page = options.page ?? await readPage(env, slug, { ...options, includeRevisions: false })
   if (!page) return null
@@ -1268,7 +1269,7 @@ export async function listPageRevisions(env: Env, slug: string, options: PageRea
 
 export async function readPageRevision(env: Env, slug: string, revisionNumber: string | number, options: PageReadOptions = {}) {
   if (!env.DB) return null
-  if (!(options.settings ? nestedSettingValue(options.settings, 'pageHistory') : await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('histórico desativado', 403)
+  if (!(options.settings ? nestedSettingValue(options.settings, 'pageHistory') : await globalSettingEnabled(env, 'pageHistory'))) throw new EditorialError('History disabled', 403)
 
   const page = options.page ?? await readPage(env, slug, { ...options, includeRevisions: false })
   if (!page) return null
@@ -1870,10 +1871,10 @@ export async function searchPages(env: Env, query: string) {
 }
 
 export async function searchPageBatch(env: Env, query: string, offset = 0) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const clean = query.trim()
   if (!clean) return { results: [], total: 0, offset: 0, nextOffset: null }
-  if (clean.length > 500) throw new EditorialError('consulta de busca longa demais', 400)
+  if (clean.length > 500) throw new EditorialError('Search query too long', 400)
   offset = Math.max(0, Math.floor(Number(offset) || 0))
   const canonical = slugFromTitle(clean)
   const like = likeTerm(clean), canonicalLike = likeTerm(canonical), prefix = likePrefix(clean), canonicalPrefix = likePrefix(canonical)
@@ -1958,7 +1959,7 @@ export async function createEditProposal(env: Env, slug: string, input: EditProp
   const reporterIp = clientIpFromRequest(request)
   const userAgent = String(request.headers.get('user-agent') || '').slice(0, 500)
   const pageSlug = slugFromTitle(slug)
-  if (isReservedFilePageSlug(pageSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
+  if (isReservedFilePageSlug(pageSlug)) throw new EditorialError('The /wiki/arquivo/ namespace is reserved for media uploads', 403)
 
   validatePageInput({ ...input, title, content, summary }, { requireSummary: true })
 
@@ -1980,7 +1981,7 @@ export async function createEditProposal(env: Env, slug: string, input: EditProp
     reviewedBy: null
   }
 
-  if (!env.DB) throw new EditorialError('armazenamento de propostas indisponível', 503)
+  if (!env.DB) throw new EditorialError('Proposal storage unavailable', 503)
 
   const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(reporterIp || 'unknown')))).map(value => value.toString(16).padStart(2, '0')).join('')
   const windowStart = Math.floor(Date.now() / 600000)
@@ -2023,7 +2024,7 @@ export async function createEditProposal(env: Env, slug: string, input: EditProp
   ), env.DB.prepare('DELETE FROM core_write_guards WHERE id = ?').bind(guardId)]
   try { await env.DB.batch(statements) }
   catch (cause) {
-    if (String(cause).includes('wiki_write_conflict')) throw new EditorialError('limite de propostas atingido; tente novamente mais tarde', 429)
+    if (String(cause).includes('wiki_write_conflict')) throw new EditorialError('Proposal limit reached. Try again later', 429)
     throw cause
   }
 
@@ -2087,7 +2088,7 @@ export async function rejectEditProposal(env: Env, id: string, reviewerEmail: st
     WHERE id = ? AND status = 'pending' RETURNING *
   `).bind(reviewerEmail, now, now, id).first()
 
-  if (!rejected) throw new EditorialError('a proposta já foi revisada')
+  if (!rejected) throw new EditorialError('The proposal has already been reviewed')
   return rowToProposal(rejected)
 }
 
@@ -2191,8 +2192,8 @@ export async function renamePage(env: Env, slug: string, input: { title?: string
   const statements: D1PreparedStatement[] = []
   const title = String(input.title || '').trim()
   const newSlug = slugFromTitle(input.slug || title)
-  if (!newSlug || !title) throw new EditorialError('payload inválido', 400)
-  if (isReservedFilePageSlug(newSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
+  if (!newSlug || !title) throw new EditorialError('Invalid payload', 400)
+  if (isReservedFilePageSlug(newSlug)) throw new EditorialError('The /wiki/arquivo/ namespace is reserved for media uploads', 403)
 
   const stored = await findStoredPageSlug(env, slug, 'published', { preferCanonical: false })
   if (!stored) return null
@@ -2211,7 +2212,7 @@ export async function renamePage(env: Env, slug: string, input: { title?: string
   const view: any = await hydratePage(env, page)
   if (newSlug !== oldSlug) {
     const conflict = await env.DB.prepare('SELECT id FROM pages WHERE slug = ? AND id != ?').bind(newSlug, page.id).first()
-    if (conflict) throw new EditorialError('já existe uma página com esse slug', 409)
+    if (conflict) throw new EditorialError('A page already uses this slug', 409)
   }
 
   const now = new Date().toISOString()
@@ -2334,15 +2335,15 @@ export async function saveAdvancedRedirect(env: Env, input: { fromSlug?: string,
   const fromSlug = slugFromTitle(input.fromSlug || '')
   const toSlug = slugFromTitle(input.toSlug || '')
   const fragment = cleanRedirectFragment(input.fragment)
-  if (!fromSlug || !toSlug) throw new EditorialError('origem e destino são obrigatórios', 400)
-  if (isReservedFilePageSlug(fromSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
-  if (fromSlug === toSlug && !fragment) throw new EditorialError('o redirecionamento não pode apontar para ele mesmo', 400)
+  if (!fromSlug || !toSlug) throw new EditorialError('Source and destination are required', 400)
+  if (isReservedFilePageSlug(fromSlug)) throw new EditorialError('The /wiki/arquivo/ namespace is reserved for media uploads', 403)
+  if (fromSlug === toSlug && !fragment) throw new EditorialError('A redirect cannot point to itself', 400)
 
   const target = await env.DB.prepare("SELECT id, slug, title FROM pages WHERE slug = ? AND status = 'published'").bind(toSlug).first()
-  if (!target) throw new EditorialError('a página de destino não existe', 400)
+  if (!target) throw new EditorialError('The target page does not exist', 400)
 
   const sourcePage = await env.DB.prepare("SELECT id FROM pages WHERE slug = ? AND status != 'deleted'").bind(fromSlug).first()
-  if (sourcePage) throw new EditorialError('a origem já pertence a uma página publicada', 409)
+  if (sourcePage) throw new EditorialError('The source already belongs to a published page', 409)
 
   const optional = await getOptionalTables(env)
   if (optional.pageAliases) statements.push(env.DB.prepare('DELETE FROM page_aliases WHERE alias_slug = ?').bind(fromSlug))
@@ -2386,20 +2387,20 @@ export async function saveAdvancedAlias(env: Env, input: { aliasTitle?: string, 
   if (!env.DB) return null
   const statements: D1PreparedStatement[] = []
   const optional = await getOptionalTables(env)
-  if (!optional.pageAliases) throw new EditorialError('aliases ainda não estão disponíveis no D1', 503)
+  if (!optional.pageAliases) throw new EditorialError('Aliases are not yet available in D1', 503)
 
   const aliasTitle = String(input.aliasTitle || '').trim()
   const aliasSlug = slugFromTitle(aliasTitle)
   const toSlug = slugFromTitle(input.toSlug || '')
-  if (!aliasTitle || !aliasSlug || !toSlug) throw new EditorialError('alias e destino são obrigatórios', 400)
-  if (isReservedFilePageSlug(aliasSlug)) throw new EditorialError('o namespace /wiki/arquivo/ é reservado para uploads de mídia', 403)
+  if (!aliasTitle || !aliasSlug || !toSlug) throw new EditorialError('Alias and destination are required', 400)
+  if (isReservedFilePageSlug(aliasSlug)) throw new EditorialError('The /wiki/arquivo/ namespace is reserved for media uploads', 403)
 
   const target: any = await env.DB.prepare("SELECT id, slug, title FROM pages WHERE slug = ? AND status = 'published'").bind(toSlug).first()
-  if (!target) throw new EditorialError('a página de destino não existe', 400)
-  if (aliasSlug === toSlug) throw new EditorialError('o alias não pode ser igual à URL canônica', 400)
+  if (!target) throw new EditorialError('The target page does not exist', 400)
+  if (aliasSlug === toSlug) throw new EditorialError('The alias cannot match the canonical URL', 400)
 
   const sourcePage = await env.DB.prepare("SELECT id FROM pages WHERE slug = ? AND status != 'deleted'").bind(aliasSlug).first()
-  if (sourcePage) throw new EditorialError('o alias já pertence a uma página publicada', 409)
+  if (sourcePage) throw new EditorialError('The alias already belongs to a published page', 409)
 
   statements.push(env.DB.prepare('DELETE FROM redirects WHERE from_slug = ?').bind(aliasSlug))
   const now = new Date().toISOString()
@@ -2514,9 +2515,9 @@ function rowsFromSeedPayload(payload: any) {
 export async function importSeed(env: Env, payload: any, authorEmail: string) {
   if (!env.DB) return null
   const sourceRows = rowsFromSeedPayload(payload)
-  if (!sourceRows.length) throw new EditorialError('nenhuma página válida para importar', 400)
+  if (!sourceRows.length) throw new EditorialError('No valid pages to import', 400)
   const rows = sourceRows.filter((row: any) => row && row.slug && row.title && (row.content || row.content_markdown))
-  if (rows.length !== sourceRows.length) throw new EditorialError('o seed contém páginas incompletas', 400)
+  if (rows.length !== sourceRows.length) throw new EditorialError('Seed data contains incomplete pages', 400)
   const imported: any[] = []
   const failed: any[] = []
 
@@ -2535,7 +2536,7 @@ export async function importSeed(env: Env, payload: any, authorEmail: string) {
       }, authorEmail, null)
       imported.push({ slug: page?.slug || slug, title: page?.title || row.title })
     } catch (error) {
-      failed.push({ slug: row.slug || row.title || 'sem-slug', error: error instanceof EditorialError ? error.message : 'falha temporária de armazenamento' })
+      failed.push({ slug: row.slug || row.title || 'sem-slug', error: error instanceof EditorialError ? error.message : 'Temporary storage failure' })
     }
   }
 
@@ -2875,11 +2876,11 @@ function cleanTemplateInput(input: ContentTemplateInput) {
   const title = String(input.title || '').trim()
   const call = normalizeEscapedBlockNewlines(String(input.call ?? input.contentMarkdown ?? input.content ?? '')).trim()
   const render = normalizeEscapedBlockNewlines(String(input.renderMarkdown ?? input.render ?? '')).trim()
-  if (!title) throw new EditorialError('título do template ausente', 400)
-  if (!call) throw new EditorialError('chamada do template ausente', 400)
+  if (!title) throw new EditorialError('Missing template title', 400)
+  if (!call) throw new EditorialError('Missing template invocation', 400)
 
   const slug = slugFromTitle(input.slug || title)
-  if (!slug) throw new EditorialError('slug do template inválido', 400)
+  if (!slug) throw new EditorialError('Invalid template slug', 400)
 
   return {
     id: String(input.id || '').trim(),
@@ -2967,7 +2968,7 @@ export async function listContentTemplates(env: Env, options: { includeDisabled?
       .filter(template => (options.includeDisabled || template.status === 'active') && templateAllowedForRole(template, role))
   }
 
-  if (!await hasContentTemplatesTable(env)) throw new EditorialError('migração de templates não aplicada', 503)
+  if (!await hasContentTemplatesTable(env)) throw new EditorialError('The templates migration has not been applied', 503)
   await seedContentTemplates(env)
   const rows = await env.DB.prepare(`
     SELECT *
@@ -2983,7 +2984,7 @@ export async function listContentTemplates(env: Env, options: { includeDisabled?
 
 export async function saveContentTemplate(env: Env, input: ContentTemplateInput, authorEmail: string) {
   if (!env.DB) return null
-  if (!await hasContentTemplatesTable(env)) throw new EditorialError('migração de templates não aplicada', 503)
+  if (!await hasContentTemplatesTable(env)) throw new EditorialError('The templates migration has not been applied', 503)
 
   const clean = cleanTemplateInput(input)
   const columns = await getContentTemplateColumns(env)
@@ -3072,7 +3073,7 @@ export async function saveContentTemplate(env: Env, input: ContentTemplateInput,
 
 export async function deleteContentTemplate(env: Env, id: string) {
   if (!env.DB) return null
-  if (!await hasContentTemplatesTable(env)) throw new EditorialError('migração de templates não aplicada', 503)
+  if (!await hasContentTemplatesTable(env)) throw new EditorialError('The templates migration has not been applied', 503)
   const result = await env.DB.prepare('DELETE FROM content_templates WHERE id = ?').bind(id).run()
   return { ok: Boolean(result.meta?.changes), id }
 }
@@ -3302,12 +3303,12 @@ export async function listIpRules(env: Env) {
 
 export async function createIpRule(env: Env, input: { ip?: string, action?: string, reason?: string }, authorEmail: string) {
   if (!env.DB) return null
-  if (!(await tableExists(env, 'ip_rules'))) throw new EditorialError('a tabela ip_rules ainda não foi criada', 503)
+  if (!(await tableExists(env, 'ip_rules'))) throw new EditorialError('The ip_rules table has not been created', 503)
   const parsedIp = parseIpRule(String(input.ip || ''))
   const ip = parsedIp?.normalized || ''
   const action = String(input.action || '').trim()
-  if (!ip) throw new EditorialError('ip/cidr inválido', 400)
-  if (!['block_suggestions', 'ban_site'].includes(action)) throw new EditorialError('ação de IP inválida', 400)
+  if (!ip) throw new EditorialError('Invalid IP address or CIDR', 400)
+  if (!['block_suggestions', 'ban_site'].includes(action)) throw new EditorialError('Invalid IP rule action', 400)
   const now = new Date().toISOString()
   const id = crypto.randomUUID()
   await env.DB.prepare(`
@@ -3382,7 +3383,7 @@ export async function ensureEditorProfile(env: Env, email: string, fallbackName:
   await env.DB.prepare(`INSERT INTO editor_profiles (id, email, display_name, role, status, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(email) DO NOTHING`).bind(crypto.randomUUID(), cleanEmail, fallbackName || null, role, now, now).run()
   const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(cleanEmail).first()
-  if (!existing) throw new EditorialError('perfil indisponível', 503)
+  if (!existing) throw new EditorialError('Profile unavailable', 503)
   if (cleanEmail === superAdminEmail(env) && existing.role !== 'super_admin' && existing.status === 'active') {
     await env.DB.prepare('UPDATE editor_profiles SET role = ?, updated_at = ? WHERE email = ? AND status = ?').bind('super_admin', now, cleanEmail, 'active').run()
     existing.role = 'super_admin'
@@ -3419,17 +3420,17 @@ export async function updateEditorUser(env: Env, actorEmail: string, input: { em
   if (!env.DB) return null
   const actor: any = await env.DB.prepare('SELECT role, status FROM editor_profiles WHERE email = ?').bind(actorEmail).first()
   const actorRole = normalizeEditorRole(actor?.role)
-  if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actorRole)) throw new EditorialError('permissão insuficiente', 403)
+  if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actorRole)) throw new EditorialError('Insufficient permissions', 403)
 
   const email = String(input.email || '').trim().toLowerCase()
-  if (!email) throw new EditorialError('e-mail ausente', 400)
+  if (!email) throw new EditorialError('Missing email address', 400)
   const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
   const target = existing ? userRowToProfile(existing)! : { role: email === superAdminEmail(env) ? 'super_admin' : 'editor', displayName: null }
-  if (target.role === 'super_admin' && actorRole !== 'super_admin') throw new EditorialError('não é permitido alterar o super administrador', 403)
+  if (target.role === 'super_admin' && actorRole !== 'super_admin') throw new EditorialError('The super administrator cannot be changed', 403)
 
   const role = email === superAdminEmail(env) ? 'super_admin' : normalizeEditorRole(input.role || target.role)
-  if (role === 'super_admin' && email !== superAdminEmail(env)) throw new EditorialError('super administrador fixo', 403)
-  if (role === 'super_admin' && actorRole !== 'super_admin') throw new EditorialError('permissão insuficiente', 403)
+  if (role === 'super_admin' && email !== superAdminEmail(env)) throw new EditorialError('The super administrator is configured separately', 403)
+  if (role === 'super_admin' && actorRole !== 'super_admin') throw new EditorialError('Insufficient permissions', 403)
 
   const status = input.status === 'disabled' ? 'disabled' : 'active'
   const displayName = String(input.displayName ?? target.displayName ?? '').trim().slice(0, 80)
@@ -3451,17 +3452,17 @@ export async function deleteEditorUser(env: Env, actorEmail: string, emailInput:
   if (!env.DB) return null
   const actor = await ensureEditorProfile(env, actorEmail)
   const actorRole = normalizeEditorRole(actor?.role)
-  if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actorRole)) throw new EditorialError('permissão insuficiente', 403)
+  if (actor?.status !== 'active' || !['admin', 'super_admin'].includes(actorRole)) throw new EditorialError('Insufficient permissions', 403)
 
   const email = String(emailInput || '').trim().toLowerCase()
-  if (!email) throw new EditorialError('e-mail ausente', 400)
-  if (email === superAdminEmail(env)) throw new EditorialError('não é permitido remover o super administrador', 403)
-  if (email === String(actor?.email || '').trim().toLowerCase()) throw new EditorialError('não é permitido remover a própria conta', 403)
+  if (!email) throw new EditorialError('Missing email address', 400)
+  if (email === superAdminEmail(env)) throw new EditorialError('The super administrator cannot be removed', 403)
+  if (email === String(actor?.email || '').trim().toLowerCase()) throw new EditorialError('You cannot remove your own account', 403)
 
   const existing: any = await env.DB.prepare('SELECT * FROM editor_profiles WHERE email = ?').bind(email).first()
   if (!existing) return null
   const target = userRowToProfile(existing)
-  if (target?.role === 'super_admin') throw new EditorialError('não é permitido remover o super administrador', 403)
+  if (target?.role === 'super_admin') throw new EditorialError('The super administrator cannot be removed', 403)
 
   await env.DB.prepare("DELETE FROM editor_profiles WHERE email = ? AND role != 'super_admin' AND EXISTS (SELECT 1 FROM editor_profiles actor WHERE actor.email = ? AND actor.status = 'active' AND actor.role IN ('admin', 'super_admin'))").bind(email, actorEmail).run()
   return { ok: true, email }
@@ -3566,11 +3567,11 @@ export async function getSystemStatus(env: Env) {
   const cacheVersion = await getSetting(env, 'cache_version', { value: 0, updatedAt: null })
   const reloadVersion = await getSetting(env, 'reload_version', { value: 0, updatedAt: null })
   const publicVersion = (value: any) => ({ value: Number(value?.value || 0), updatedAt: value?.updatedAt || null })
-  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.1-indev.1' }
+  return { cacheVersion: publicVersion(cacheVersion), reloadVersion: publicVersion(reloadVersion), coreVersion: env.WIKI_CORE_VERSION || 'v1.1.1-indev.2' }
 }
 
 export async function forceSystemRefresh(env: Env, mode: 'cache' | 'reload', authorEmail: string) {
-  if (!env.DB) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB) throw new EditorialError('Storage unavailable', 503)
   const key = mode === 'reload' ? 'reload_version' : 'cache_version'
   const now = new Date().toISOString()
   const initial = JSON.stringify({ value: 1, mode, authorEmail, updatedAt: now })
@@ -3661,9 +3662,9 @@ export async function restoreDeletedUpload(env: Env, slug: string) {
   const cleanSlug = slugFromTitle(slug)
   const row: any = await env.DB.prepare('SELECT * FROM uploads WHERE (file_slug = ? OR id = ?) AND status = ?').bind(cleanSlug, slug, 'deleted').first()
   if (!row) return null
-  if (!env.WIKI_BUCKET || !(await env.WIKI_BUCKET.head(String(row.r2_key)))) throw new EditorialError('objeto de mídia indisponível', 503)
+  if (!env.WIKI_BUCKET || !(await env.WIKI_BUCKET.head(String(row.r2_key)))) throw new EditorialError('Media object unavailable', 503)
   const restored = await env.DB.prepare('UPDATE uploads SET status = ?, deleted_at = NULL, deleted_by_email = NULL, purge_after = NULL WHERE id = ? AND status = ? RETURNING *').bind('published', row.id, 'deleted').first()
-  if (!restored) throw new EditorialError('o estado do arquivo foi modificado')
+  if (!restored) throw new EditorialError('The file state has changed')
   return uploadRowToFile(restored)
 }
 
@@ -3672,7 +3673,7 @@ export async function hardDeleteUpload(env: Env, slug: string) {
   const cleanSlug = slugFromTitle(slug)
   const row: any = await env.DB.prepare('SELECT id, COALESCE(file_slug, id) AS slug, r2_key AS r2Key, filename FROM uploads WHERE (file_slug = ? OR id = ?) AND status = ?').bind(cleanSlug, slug, 'deleted').first()
   if (!row) return null
-  if (!env.WIKI_BUCKET) throw new EditorialError('armazenamento de mídia indisponível', 503)
+  if (!env.WIKI_BUCKET) throw new EditorialError('Media storage unavailable', 503)
   await env.DB.batch([
     env.DB.prepare('INSERT OR IGNORE INTO r2_cleanup (r2_key, created_at) VALUES (?, ?)').bind(row.r2Key, new Date().toISOString()),
     env.DB.prepare('DELETE FROM uploads WHERE id = ? AND status = ?').bind(row.id, 'deleted')
@@ -3801,7 +3802,7 @@ export async function getGlobalSettings(env: Env) {
       const parsed = JSON.parse(String((row as any).valueJson || 'false'))
       if (typeof parsed !== 'boolean') throw new Error('invalid setting')
       values[key] = parsed
-    } catch { throw new EditorialError('configuração global inválida', 503) }
+    } catch { throw new EditorialError('Invalid global setting', 503) }
   }
   return nestedSettings(values)
 }
@@ -3817,13 +3818,13 @@ export async function globalSettingEnabled(env: Env, key: string, fallback = tru
     if (typeof parsed !== 'boolean') throw new Error('invalid setting')
     return parsed
   } catch {
-    throw new EditorialError('configuração global inválida', 503)
+    throw new EditorialError('Invalid global setting', 503)
   }
 }
 
 export async function saveGlobalSettings(env: Env, input: Record<string, any>, actorEmail: string) {
-  if (!env.DB) throw new EditorialError('D1 ainda não foi ligado', 503)
-  if (!(await tableExists(env, 'global_settings'))) throw new EditorialError('aplique a migration 0015 antes de salvar configurações globais', 503)
+  if (!env.DB) throw new EditorialError('D1 is not bound', 503)
+  if (!(await tableExists(env, 'global_settings'))) throw new EditorialError('Apply migration 0015 before saving global settings', 503)
 
   const flat = flattenSettings(input)
   const now = new Date().toISOString()

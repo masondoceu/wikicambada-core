@@ -14,16 +14,16 @@ type Context = EventContext<Env, string, Record<string, never>>
 
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireRole(request, env, 'editor')
-  if (!user) return error('gerenciamento de redirecionamentos bloqueado pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado', 501)
+  if (!user) return error('Redirect management blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound', 501)
 
   return json(await listAdvancedRedirects(env))
 }
 
 export async function onRequestPost({ request, env }: Context) {
   const user = await requireRole(request, env, 'editor')
-  if (!user) return error('gerenciamento de redirecionamentos bloqueado pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado', 501)
+  if (!user) return error('Redirect management blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound', 501)
 
   const input: any = await request.json().catch(() => null) as any
   const action = String(input?.action || '').trim()
@@ -52,9 +52,9 @@ export async function onRequestPost({ request, env }: Context) {
       return json(await deleteAdvancedAlias(env, input?.aliasSlug))
     }
 
-    return error('ação inválida', 400)
+    return error('Invalid action', 400)
   } catch (exception) {
-    const message = exception instanceof Error ? exception.message : 'erro interno'
+    const message = exception instanceof Error ? exception.message : 'Internal error'
     return error(message, 400)
   }
 }

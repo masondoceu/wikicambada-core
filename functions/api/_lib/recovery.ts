@@ -13,33 +13,33 @@ async function digest(value: string) {
 }
 
 async function owner(request: Request, env: Env) {
-  if (!env.DB || !env.WIKI_BUCKET) throw new EditorialError('armazenamento indisponível', 503)
+  if (!env.DB || !env.WIKI_BUCKET) throw new EditorialError('Storage unavailable', 503)
   const identity = await readAccessIdentity(request, env)
   const email = identity.development ? identity.email! : String(env.WIKI_SUPER_ADMIN_EMAIL || '').trim().toLowerCase()
-  if ((!identity.verified && !identity.development) || !email || identity.email !== email) throw new EditorialError('recuperação restrita ao super administrador', 403)
+  if ((!identity.verified && !identity.development) || !email || identity.email !== email) throw new EditorialError('Recovery is restricted to the super administrator', 403)
   const profile: any = await env.DB.prepare('SELECT status FROM editor_profiles WHERE email = ?').bind(email).first()
   const operation: any = await env.DB.prepare('SELECT token, owner_email FROM core_recovery_lock WHERE id = 1').first()
   const continuing = operation?.owner_email === email && operation.token === request.headers.get('x-wiki-recovery')
-  if (!continuing && profile && profile.status !== 'active') throw new EditorialError('conta desativada', 403)
+  if (!continuing && profile && profile.status !== 'active') throw new EditorialError('Account disabled', 403)
   return email
 }
 
 async function lockFor(request: Request, env: Env, email: string) {
   const lock: any = await env.DB!.prepare('SELECT * FROM core_recovery_lock WHERE id = 1').first()
-  if (!lock || lock.owner_email !== email || lock.token !== request.headers.get('x-wiki-recovery')) throw new EditorialError('operação de recuperação não encontrada', 409)
+  if (!lock || lock.owner_email !== email || lock.token !== request.headers.get('x-wiki-recovery')) throw new EditorialError('Recovery operation not found', 409)
   return lock
 }
 
 async function schema(env: Env) {
   const known = new Set([...RECOVERY_TABLES, 'core_recovery_lock', 'core_recovery_objects', 'core_recovery_chunks', 'd1_migrations', '_cf_KV', '_cf_METADATA', 'page_search_data', 'page_search_idx', 'page_search_content', 'page_search_docsize', 'page_search_config'])
   const inventory = await env.DB!.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all()
-  if (inventory.results.some((row: any) => !known.has(String(row.name)))) throw new EditorialError('o banco contém tabelas fora do schema de recuperação', 409)
+  if (inventory.results.some((row: any) => !known.has(String(row.name)))) throw new EditorialError('The database contains tables outside the recovery schema', 409)
   const triggers = await env.DB!.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'recovery_%'").all()
-  if (triggers.results.length !== 54) throw new EditorialError('proteções de recuperação não foram aplicadas', 503)
+  if (triggers.results.length !== 54) throw new EditorialError('Recovery protections have not been applied', 503)
   const result: Record<string, string[]> = {}
   for (const table of RECOVERY_TABLES) {
     const rows = await env.DB!.prepare(`PRAGMA table_info(${quote(table)})`).all()
-    if (!rows.results.length) throw new EditorialError('schema de recuperação incompleto', 503)
+    if (!rows.results.length) throw new EditorialError('Incomplete recovery schema', 503)
     result[table] = rows.results.map((row: any) => String(row.name))
   }
   return result
@@ -47,7 +47,7 @@ async function schema(env: Env) {
 
 function objectKey(value: string | null) {
   const key = String(value || '')
-  if (!key || new TextEncoder().encode(key).length > 1024 || /[\u0000-\u001f]/.test(key)) throw new EditorialError('chave de objeto inválida', 400)
+  if (!key || new TextEncoder().encode(key).length > 1024 || /[\u0000-\u001f]/.test(key)) throw new EditorialError('Invalid object key', 400)
   return key
 }
 
@@ -79,12 +79,12 @@ export async function recoveryGet(request: Request, env: Env) {
     return json({ operation: row, databaseSchema: 17, tables: await schema(env) })
   }
   const lock = await lockFor(request, env, email)
-  if (lock.kind !== 'backup' || lock.phase !== 'transfer') throw new EditorialError('a operação não está exportando dados', 409)
+  if (lock.kind !== 'backup' || lock.phase !== 'transfer') throw new EditorialError('The operation is not exporting data', 409)
   if (action === 'table') {
     const table = String(url.searchParams.get('table') || '')
-    if (!RECOVERY_TABLES.includes(table)) throw new EditorialError('tabela inválida', 400)
+    if (!RECOVERY_TABLES.includes(table)) throw new EditorialError('Invalid table', 400)
     const cursor = url.searchParams.has('cursor') ? Number(url.searchParams.get('cursor')) : null
-    if (cursor !== null && !Number.isSafeInteger(cursor)) throw new EditorialError('cursor inválido', 400)
+    if (cursor !== null && !Number.isSafeInteger(cursor)) throw new EditorialError('Invalid cursor', 400)
     const rows: any = await env.DB!.prepare(`SELECT rowid AS _recovery_cursor, * FROM ${quote(table)} WHERE (? IS NULL OR rowid > ?) ORDER BY rowid LIMIT 20`).bind(cursor, cursor).all()
     const next = rows.results.length === 20 ? Number(rows.results.at(-1)._recovery_cursor) : null
     return json({ rows: rows.results.map(({ _recovery_cursor, ...row }: any) => row), next })
@@ -99,25 +99,25 @@ export async function recoveryGet(request: Request, env: Env) {
     const key = objectKey(url.searchParams.get('key'))
     const registered: any = await env.DB!.prepare('SELECT etag FROM core_recovery_objects WHERE r2_key = ?').bind(key).first()
     const object = await env.WIKI_BUCKET!.get(key)
-    if (!registered || !object || object.etag !== registered.etag) throw new EditorialError('o inventário R2 mudou durante o backup', 409)
+    if (!registered || !object || object.etag !== registered.etag) throw new EditorialError('The R2 inventory changed during backup', 409)
     return new Response(object.body, { headers: { 'content-type': 'application/octet-stream', 'content-length': String(object.size) } })
   }
-  throw new EditorialError('ação inválida', 400)
+  throw new EditorialError('Invalid action', 400)
 }
 
 export async function recoveryPost(request: Request, env: Env) {
   const email = await owner(request, env)
   const input: any = await request.json().catch(() => null)
-  if (!input || typeof input.action !== 'string') throw new EditorialError('payload inválido', 400)
+  if (!input || typeof input.action !== 'string') throw new EditorialError('Invalid payload', 400)
   if (input.action === 'begin-backup' || input.action === 'begin-restore') {
     const tables = await schema(env)
     const kind = input.action === 'begin-backup' ? 'backup' : 'restore'
     const token = crypto.randomUUID()
     if (kind === 'restore') {
-      if (input.databaseSchema !== 17 || JSON.stringify(input.tables) !== JSON.stringify(tables)) throw new EditorialError('schema do backup incompatível', 409)
-      if (!Number.isSafeInteger(input.objectCount) || input.objectCount < 0 || !input.counts || RECOVERY_TABLES.some(table => !Number.isSafeInteger(input.counts[table]) || input.counts[table] < 0)) throw new EditorialError('manifesto de restauração inválido', 400)
+      if (input.databaseSchema !== 17 || JSON.stringify(input.tables) !== JSON.stringify(tables)) throw new EditorialError('Incompatible backup schema', 409)
+      if (!Number.isSafeInteger(input.objectCount) || input.objectCount < 0 || !input.counts || RECOVERY_TABLES.some(table => !Number.isSafeInteger(input.counts[table]) || input.counts[table] < 0)) throw new EditorialError('Invalid restore manifest', 400)
       const count: any = await env.DB!.prepare(`SELECT ${EMPTY_TARGET} AS total`).first()
-      if (count.total || (await env.WIKI_BUCKET!.list({ limit: 1 })).objects.length) throw new EditorialError('a restauração exige D1 e R2 vazios', 409)
+      if (count.total || (await env.WIKI_BUCKET!.list({ limit: 1 })).objects.length) throw new EditorialError('Restore requires empty D1 and R2 storage', 409)
     }
     try {
       const initialTemplates = kind === 'restore' ? (await env.DB!.prepare('SELECT * FROM content_templates').all()).results : []
@@ -130,7 +130,7 @@ export async function recoveryPost(request: Request, env: Env) {
         ])
       } else await insert.run()
     } catch (cause) {
-      if (String(cause).includes('UNIQUE') || String(cause).includes('wiki_write_conflict')) throw new EditorialError('outra recuperação está em andamento', 409)
+      if (String(cause).includes('UNIQUE') || String(cause).includes('wiki_write_conflict')) throw new EditorialError('Another recovery operation is in progress', 409)
       throw cause
     }
     if (kind === 'restore') await restoreBatch(env, token, 'transfer', [env.DB!.prepare('DELETE FROM content_templates')])
@@ -157,13 +157,13 @@ export async function recoveryPost(request: Request, env: Env) {
   }
   if (input.action === 'table' && lock.kind === 'restore' && lock.phase === 'transfer') {
     const table = String(input.table || '')
-    if (!RECOVERY_TABLES.includes(table) || !Array.isArray(input.rows) || input.rows.length > 20 || !input.chunkId || String(input.chunkId).length > 200) throw new EditorialError('bloco de restauração inválido', 400)
+    if (!RECOVERY_TABLES.includes(table) || !Array.isArray(input.rows) || input.rows.length > 20 || !input.chunkId || String(input.chunkId).length > 200) throw new EditorialError('Invalid restore chunk', 400)
     const columns = (await env.DB!.prepare(`PRAGMA table_info(${quote(table)})`).all()).results.map((row: any) => String(row.name))
-    if (input.rows.some((row: any) => !row || typeof row !== 'object' || columns.some(column => !(column in row)) || Object.keys(row).some(column => !columns.includes(column)))) throw new EditorialError('colunas do backup incompatíveis', 400)
+    if (input.rows.some((row: any) => !row || typeof row !== 'object' || columns.some(column => !(column in row)) || Object.keys(row).some(column => !columns.includes(column)))) throw new EditorialError('Incompatible backup columns', 400)
     const hash = await digest(JSON.stringify({ table, rows: input.rows }))
     const previous: any = await env.DB!.prepare('SELECT sha256 FROM core_recovery_chunks WHERE chunk_id = ?').bind(input.chunkId).first()
     if (previous) {
-      if (previous.sha256 !== hash) throw new EditorialError('bloco de recuperação em conflito', 409)
+      if (previous.sha256 !== hash) throw new EditorialError('Conflicting recovery chunk', 409)
       return json({ ok: true, repeated: true })
     }
     await restoreBatch(env, lock.token, 'transfer', [
@@ -177,10 +177,10 @@ export async function recoveryPost(request: Request, env: Env) {
       const manifest = JSON.parse(lock.manifest_json)
       const counts = manifest.counts
       const objects: any = await env.DB!.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(stored), 0) AS stored FROM core_recovery_objects').first()
-      if (objects.total !== manifest.objectCount || objects.stored !== manifest.objectCount) throw new EditorialError('objetos R2 incompletos', 409)
+      if (objects.total !== manifest.objectCount || objects.stored !== manifest.objectCount) throw new EditorialError('Incomplete R2 objects', 409)
       const rows = await env.DB!.batch(RECOVERY_TABLES.map(table => env.DB!.prepare(`SELECT COUNT(*) AS total FROM ${quote(table)}`)))
-      if (rows.some((row, index) => Number((row.results[0] as any).total) !== counts[RECOVERY_TABLES[index]])) throw new EditorialError('restauração incompleta', 409)
-      if ((await env.DB!.prepare('PRAGMA foreign_key_check').all()).results.length || await env.DB!.prepare('SELECT pages.id FROM pages LEFT JOIN revisions ON revisions.id = pages.current_revision_id WHERE pages.current_revision_id IS NOT NULL AND (revisions.id IS NULL OR revisions.page_id != pages.id) LIMIT 1').first()) throw new EditorialError('referências editoriais inválidas', 409)
+      if (rows.some((row, index) => Number((row.results[0] as any).total) !== counts[RECOVERY_TABLES[index]])) throw new EditorialError('Incomplete restore', 409)
+      if ((await env.DB!.prepare('PRAGMA foreign_key_check').all()).results.length || await env.DB!.prepare('SELECT pages.id FROM pages LEFT JOIN revisions ON revisions.id = pages.current_revision_id WHERE pages.current_revision_id IS NOT NULL AND (revisions.id IS NULL OR revisions.page_id != pages.id) LIMIT 1').first()) throw new EditorialError('Invalid editorial references', 409)
     }
     await env.DB!.prepare("UPDATE core_recovery_lock SET phase = 'validating' WHERE id = 1").run()
     return json({ ok: true })
@@ -190,13 +190,13 @@ export async function recoveryPost(request: Request, env: Env) {
       const page = await env.WIKI_BUCKET!.list({ limit: 20, cursor: input.cursor || undefined })
       for (const object of page.objects) {
         const original: any = await env.DB!.prepare('SELECT etag, size_bytes FROM core_recovery_objects WHERE r2_key = ?').bind(object.key).first()
-        if (!original || original.etag !== object.etag || original.size_bytes !== object.size) throw new EditorialError('o inventário R2 mudou durante o backup', 409)
+        if (!original || original.etag !== object.etag || original.size_bytes !== object.size) throw new EditorialError('The R2 inventory changed during backup', 409)
       }
       const key = `validate:${String(input.cursor || '')}`
       await env.DB!.prepare('INSERT INTO core_recovery_chunks VALUES (?, ?) ON CONFLICT(chunk_id) DO NOTHING').bind(key, String(page.objects.length)).run()
       if (!page.truncated) {
         const total: any = await env.DB!.prepare("SELECT (SELECT COUNT(*) FROM core_recovery_objects) AS expected, (SELECT SUM(CAST(sha256 AS INTEGER)) FROM core_recovery_chunks WHERE chunk_id LIKE 'validate:%') AS verified").first()
-        if (total.expected !== Number(total.verified || 0)) throw new EditorialError('inventário R2 incompleto', 409)
+        if (total.expected !== Number(total.verified || 0)) throw new EditorialError('Incomplete R2 inventory', 409)
         await env.DB!.prepare("UPDATE core_recovery_lock SET phase = 'complete' WHERE id = 1").run()
       }
       return json({ next: page.truncated ? page.cursor : null })
@@ -206,12 +206,12 @@ export async function recoveryPost(request: Request, env: Env) {
     for (const row of rows.results) {
       const record: any = await env.DB!.prepare('SELECT size_bytes, sha256 FROM core_recovery_objects WHERE r2_key = ?').bind(row.r2_key).first()
       const object = await env.WIKI_BUCKET!.head(row.r2_key)
-      if (!record || !object || object.size !== row.size_bytes || record.size_bytes !== row.size_bytes || (row.sha256 && row.sha256 !== record.sha256)) throw new EditorialError('referência de mídia inválida', 409)
+      if (!record || !object || object.size !== row.size_bytes || record.size_bytes !== row.size_bytes || (row.sha256 && row.sha256 !== record.sha256)) throw new EditorialError('Invalid media reference', 409)
     }
     await env.DB!.prepare('INSERT INTO core_recovery_chunks VALUES (?, ?) ON CONFLICT(chunk_id) DO NOTHING').bind(`validate:${offset}`, String(rows.results.length)).run()
     if (rows.results.length < 20) {
       const total: any = await env.DB!.prepare("SELECT (SELECT COUNT(*) FROM uploads) AS expected, (SELECT SUM(CAST(sha256 AS INTEGER)) FROM core_recovery_chunks WHERE chunk_id LIKE 'validate:%') AS verified").first()
-      if (total.expected !== Number(total.verified || 0)) throw new EditorialError('validação de mídia incompleta', 409)
+      if (total.expected !== Number(total.verified || 0)) throw new EditorialError('Incomplete media validation', 409)
       await env.DB!.prepare("UPDATE core_recovery_lock SET phase = 'complete' WHERE id = 1").run()
     }
     return json({ next: rows.results.length === 20 ? offset + 20 : null })
@@ -220,29 +220,29 @@ export async function recoveryPost(request: Request, env: Env) {
     await clearLock(env)
     return json({ ok: true })
   }
-  throw new EditorialError('ação incompatível com o estado da recuperação', 409)
+  throw new EditorialError('Action incompatible with the recovery state', 409)
 }
 
 export async function recoveryPut(request: Request, env: Env) {
   const email = await owner(request, env)
   const lock = await lockFor(request, env, email)
-  if (lock.kind !== 'restore' || lock.phase !== 'transfer') throw new EditorialError('a operação não está restaurando objetos', 409)
+  if (lock.kind !== 'restore' || lock.phase !== 'transfer') throw new EditorialError('The operation is not restoring objects', 409)
   const key = objectKey(new URL(request.url).searchParams.get('key'))
   const size = Number(request.headers.get('content-length'))
   const hash = String(request.headers.get('x-wiki-sha256') || '')
-  if (!Number.isSafeInteger(size) || size < 0 || !/^[a-f0-9]{64}$/.test(hash)) throw new EditorialError('metadados do objeto inválidos', 400)
+  if (!Number.isSafeInteger(size) || size < 0 || !/^[a-f0-9]{64}$/.test(hash)) throw new EditorialError('Invalid object metadata', 400)
   const encoded = request.headers.get('x-wiki-object-metadata')
   let metadata: any
   try { metadata = encoded ? JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded), value => value.charCodeAt(0)))) : {} }
-  catch { throw new EditorialError('metadados do objeto inválidos', 400) }
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new EditorialError('metadados do objeto inválidos', 400)
+  catch { throw new EditorialError('Invalid object metadata', 400) }
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new EditorialError('Invalid object metadata', 400)
   if (metadata.httpMetadata?.cacheExpiry) metadata.httpMetadata.cacheExpiry = new Date(metadata.httpMetadata.cacheExpiry)
   const existing: any = await env.DB!.prepare('SELECT sha256, size_bytes FROM core_recovery_objects WHERE r2_key = ?').bind(key).first()
-  if (!existing && await env.WIKI_BUCKET!.head(key)) throw new EditorialError('objeto fora do escopo da restauração', 409)
-  if (existing && (existing.sha256 !== hash || existing.size_bytes !== size)) throw new EditorialError('objeto de recuperação em conflito', 409)
+  if (!existing && await env.WIKI_BUCKET!.head(key)) throw new EditorialError('Object outside the restore scope', 409)
+  if (existing && (existing.sha256 !== hash || existing.size_bytes !== size)) throw new EditorialError('Conflicting recovery object', 409)
   await env.DB!.prepare('INSERT INTO core_recovery_objects (r2_key, size_bytes, sha256, metadata_json) VALUES (?, ?, ?, ?) ON CONFLICT(r2_key) DO NOTHING').bind(key, size, hash, JSON.stringify(metadata)).run()
   const stored = await env.WIKI_BUCKET!.put(key, request.body, { sha256: hash, httpMetadata: metadata.httpMetadata || {}, customMetadata: metadata.customMetadata || {} })
-  if (!stored || stored.size !== size) throw new EditorialError('tamanho do objeto diferente do manifesto', 409)
+  if (!stored || stored.size !== size) throw new EditorialError('Object size does not match the manifest', 409)
   await env.DB!.prepare('UPDATE core_recovery_objects SET stored = 1 WHERE r2_key = ?').bind(key).run()
   return json({ ok: true })
 }

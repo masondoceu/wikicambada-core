@@ -7,7 +7,7 @@ import { buildPublic } from '../scripts/build-public.mjs'
 import { unstable_generateASSETSBinding } from 'wrangler'
 import { loadFunction } from './helpers.mjs'
 
-test('publicação contém somente assets e configuração pública', async () => {
+test('The public build contains only public assets and settings', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wiki-public-'))
   try {
     for (const path of ['src', 'index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked', 'access-denied', 'login-error', 'non-identity-blocked', 'wikicambada-release.json', 'README.md', 'readmes/README.pt-BR.md']) await cp(path, join(root, path), { recursive: true })
@@ -19,6 +19,8 @@ test('publicação contém somente assets e configuração pública', async () =
     await writeFile(join(root, 'src/scripts/private.js'), 'private implementation')
     const installed = JSON.parse(await readFile(join(root, 'src/config/site.json'), 'utf8'))
     installed.site.privateToken = 'secret-token'
+    installed.site.interfaceLanguage = 'en'
+    installed.site.language = 'pt-BR'
     installed.features.cloudflareBadge = false
     installed.features.builtWithCloudflareBadge = true
     installed.branding.privateToken = 'secret-token'
@@ -27,6 +29,8 @@ test('publicação contém somente assets e configuração pública', async () =
     await writeFile(join(root, 'src/config/site.json'), JSON.stringify(installed))
     await writeFile(join(root, 'src/data/wiki-icons.json'), JSON.stringify({ icons: ['/src/media/images/core/cat-guard.png'], fallback: '/src/media/images/core/cat-guard.png', privateToken: 'secret-token' }))
     const output = await buildPublic(root)
+    assert.match(await readFile(join(output, '404.html'), 'utf8'), /<html lang="en" class="error-ready">[\s\S]*<title>Page not found/)
+    assert.match(await readFile(join(output, 'access-denied/index.html'), 'utf8'), />Access denied<\/h1>/)
     const files = await readdir(output, { recursive: true })
     assert.ok(!files.some(name => /(?:^|[\\/])readmes?(?:\.|$)/i.test(name)))
     for (const name of files) assert.ok(!/\.py$|\.zip$|\.dev.vars|state\.json|installation\.json|local\.json|setup|tests|migrations/.test(name), name)
@@ -42,7 +46,7 @@ test('publicação contém somente assets e configuração pública', async () =
     assert.deepEqual(config.seo, { indexing: false, disallow: ['/wiki/unlisted'] })
     assert.equal(config.navigation.main.at(-1).privateToken, undefined)
     assert.equal(JSON.parse(await readFile(join(output, 'src/data/wiki-icons.json'), 'utf8')).privateToken, undefined)
-    await assert.rejects(buildPublic(root, join(root, 'src')), /destino de publicação inválido/)
+    await assert.rejects(buildPublic(root, join(root, 'src')), /Invalid public build destination/)
     assert.ok(!files.some(name => name.endsWith('private.js')))
     assert.ok(files.includes('src\\scripts\\theme.js') || files.includes('src/scripts/theme.js'))
     const signal = new AbortController()

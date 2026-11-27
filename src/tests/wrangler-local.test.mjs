@@ -16,7 +16,7 @@ async function wrangler(args) {
   return output
 }
 
-test('Wrangler aplica todas as migrations localmente e registra o schema real', async () => {
+test('Wrangler applies all migrations locally and records the actual schema', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'wiki-wrangler-test-'))
   try {
     const config = join(directory, 'wrangler.toml')

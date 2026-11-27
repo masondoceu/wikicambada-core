@@ -10,7 +10,26 @@ const headers = app => ({ 'x-setup-token': app.token, 'content-type': 'applicati
 async function connect(app) { const controller = new AbortController(); const response = await fetch(app.origin + '/api/events?token=' + app.token, { signal: controller.signal }); assert.equal(response.status, 200); return () => controller.abort() }
 async function until(check) { for (let attempt = 0; attempt < 100; attempt++) { if (check()) return; await sleep(10) } throw new Error('condition not reached') }
 
-test('setup valida Host, Origin, CSRF e autorização local antes de encerrar', async () => {
+test('Setup localizes diagnostics independently of the wiki language', async () => {
+  const fixture = project()
+  fixture.save = () => { throw new Error('Unsupported version') }
+  fixture.verify = () => ({ ok: true, checks: [{ name: 'Core file integrity', ok: true, message: 'Valid hashes' }] })
+  const app = await startServer({ project: fixture, port: 0, openBrowser: false })
+  try {
+    for (const [language, expected] of [['en', 'Unsupported version'], ['pt-BR', 'versão não suportada']]) {
+      const localized = { ...headers(app), 'x-setup-language': language }
+      const response = await fetch(app.origin + '/api/configure', { method: 'POST', body: '{}', headers: localized })
+      assert.equal(response.status, 400)
+      assert.deepEqual(await response.json(), { ok: false, error: expected })
+      const state = await (await fetch(app.origin + '/api/state', { headers: localized })).json()
+      assert.equal(state.config.site.language, 'pt-BR')
+      const verification = await (await fetch(app.origin + '/api/verify', { headers: localized })).json()
+      assert.equal(verification.checks[0].message, language === 'en' ? 'Valid hashes' : 'hashes válidos')
+    }
+  } finally { await app.shutdown(); await app.closed }
+})
+
+test('Setup checks Host, Origin, CSRF and local authorization before shutdown', async () => {
   const app = await startServer({ project: project(), port: 0, openBrowser: false, graceMs: 120 })
   try {
     const html = await (await fetch(app.origin)).text()
@@ -25,7 +44,7 @@ test('setup valida Host, Origin, CSRF e autorização local antes de encerrar', 
     await assert.rejects(fetch(app.origin))
   } finally { await app.shutdown(); await app.closed }
 })
-test('SSE mantém servidor sem primeiro cliente, com aba em segundo plano, recarga e múltiplas abas', async () => {
+test('SSE keeps setup running before first connection, in background tabs, during reloads and across tabs', async () => {
   const app = await startServer({ project: project(), port: 0, openBrowser: false, graceMs: 120 })
   try {
     await sleep(250)
@@ -40,7 +59,7 @@ test('SSE mantém servidor sem primeiro cliente, com aba em segundo plano, recar
     await assert.rejects(fetch(app.origin))
   } finally { await app.shutdown(); await app.closed }
 })
-test('encerramento aguarda operação crítica antes de liberar porta e conexões', async () => {
+test('Shutdown waits for critical work before releasing the port and connections', async () => {
   const p = project(); let release
   p.save = () => new Promise(resolve => { release = () => resolve({ config: {} }) })
   const app = await startServer({ project: p, port: 0, openBrowser: false, graceMs: 80 })
@@ -55,7 +74,7 @@ test('encerramento aguarda operação crítica antes de liberar porta e conexõe
   } finally { release?.(); await app.shutdown(); await app.closed }
 })
 
-test('setup recusa interfaces públicas e escolhe outra porta quando necessário', async () => {
+test('Setup rejects public interfaces and picks another port when needed', async () => {
   await assert.rejects(startServer({ host: '0.0.0.0', port: 0, openBrowser: false }), /loopback/)
   const first = await startServer({ project: project(), port: 0, openBrowser: false })
   let second
@@ -66,7 +85,7 @@ test('setup recusa interfaces públicas e escolhe outra porta quando necessário
   } finally { await first.shutdown(); if (second) await second.shutdown(); await first.closed; if (second) await second.closed }
 })
 
-test('setup aceita loopback IPv6 com a mesma autorização local', async t => {
+test('Setup supports IPv6 loopback with the same local authorization checks', async t => {
   let app
   try { app = await startServer({ project: project(), host: '::1', port: 0, openBrowser: false }) }
   catch (error) { if (['EAFNOSUPPORT', 'EADDRNOTAVAIL'].includes(error.code)) return t.skip('IPv6 indisponível'); throw error }

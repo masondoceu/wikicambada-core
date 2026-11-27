@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { bootMediaViewer } from '../scripts/media-viewer.js'
 
-test('a imagem com detalhes abre somente pelo clique primário e respeita links que a envolvem', () => {
+test('The media viewer opens on primary clicks and respects surrounding links', () => {
   const original = { document: globalThis.document, window: globalThis.window }
   const handlers = new Map(), classes = new Set()
   const classList = { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name) }

@@ -1,3 +1,7 @@
+import { interfaceLanguage } from './core/i18n.js'
+
+const ui = (pt, en) => interfaceLanguage() === 'en' ? en : pt
+
 let viewerState = {
   items: [],
   index: 0
@@ -33,20 +37,20 @@ function ensureViewer() {
   viewer.setAttribute('data-media-viewer-root', '')
   viewer.innerHTML = `
     <div class="media-viewer-stage" data-media-close></div>
-    <article class="media-viewer-card" aria-label="Visualizador de mídia">
+    <article class="media-viewer-card" aria-label="${ui('Visualizador de mídia', 'Media viewer')}">
       <header class="media-viewer-topbar">
         <span data-media-counter>1/1</span>
-        <button type="button" class="media-viewer-icon-button" data-media-close aria-label="Fechar">×</button>
+        <button type="button" class="media-viewer-icon-button" data-media-close aria-label="${ui('Fechar', 'Close')}">×</button>
       </header>
-      <button type="button" class="media-viewer-nav media-viewer-prev" data-media-prev aria-label="Mídia anterior">‹</button>
-      <button type="button" class="media-viewer-nav media-viewer-next" data-media-next aria-label="Próxima mídia">›</button>
+      <button type="button" class="media-viewer-nav media-viewer-prev" data-media-prev aria-label="${ui('Mídia anterior', 'Previous media')}">‹</button>
+      <button type="button" class="media-viewer-nav media-viewer-next" data-media-next aria-label="${ui('Próxima mídia', 'Next media')}">›</button>
       <div class="media-viewer-body" data-media-body></div>
       <footer class="media-viewer-footer">
         <div class="media-viewer-caption">
           <strong data-media-title></strong>
           <span data-media-caption></span>
         </div>
-        <a class="media-viewer-details primary-button" data-media-details href="#">Mais detalhes</a>
+        <a class="media-viewer-details primary-button" data-media-details href="#">${ui('Mais detalhes', 'More details')}</a>
       </footer>
     </article>
   `
@@ -75,7 +79,7 @@ function isViewerOpen() {
 }
 
 function mediaTitleFromTrigger(trigger, caption) {
-  return trigger.dataset.mediaTitle || trigger.getAttribute('alt') || caption || 'Arquivo de mídia'
+  return trigger.dataset.mediaTitle || trigger.getAttribute('alt') || caption || ui('Arquivo de mídia', 'Media file')
 }
 
 function fileDetailsFromContentUrl(src) {
@@ -168,7 +172,7 @@ function mediaNodeForItem(item) {
   if (embed) {
     const iframe = document.createElement('iframe')
     iframe.src = embed
-    iframe.title = item.title || item.caption || 'vídeo incorporado'
+    iframe.title = item.title || item.caption || ui('vídeo incorporado', 'embedded video')
     iframe.loading = 'lazy'
     iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
     iframe.allowFullscreen = true
@@ -206,7 +210,7 @@ function renderViewerItem() {
   body.innerHTML = ''
   body.append(mediaNodeForItem(item))
 
-  if (title) title.textContent = item.title || 'Arquivo de mídia'
+  if (title) title.textContent = item.title || ui('Arquivo de mídia', 'Media file')
   if (caption) caption.textContent = item.caption || ''
   if (counter) counter.textContent = `${viewerState.index + 1}/${viewerState.items.length}`
 

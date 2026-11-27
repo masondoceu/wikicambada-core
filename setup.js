@@ -16,7 +16,7 @@ import { startServer } from './src/setup/server.js'
 export async function main(args = process.argv.slice(2)) {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: Object.fromEntries(['output', 'source', 'database', 'objects', 'archive', 'configuration', 'url', 'token-file', 'state-file', 'port', 'host'].map(name => [name, { type: 'string' }]).concat([['resume', { type: 'boolean' }], ['no-browser', { type: 'boolean' }], ['help', { type: 'boolean' }]])) })
   const command = positionals[0] || 'serve', project = new Project(), required = (...names) => { for (const name of names) if (!values[name]) throw new Error('--' + name + ' é obrigatório') }
-  if (values.help) { console.log('WikiCambada Core setup: serve, verify, package, migrate-legacy, backup-local, restore-local, recover-local, backup, restore, abort-recovery\nnode setup.js migrate-legacy --source <pasta-ou-zip> --output <pasta-nova>'); return }
+  if (values.help) { console.log('WikiCambada Core setup: serve, verify, package, migrate-legacy, backup-local, restore-local, recover-local, backup, restore, abort-recovery\nnode setup.js migrate-legacy --source <directory-or-zip> --output <new-directory>'); return }
   let result
   if (command === 'serve') {
     const app = await startServer({ project, port: values.port === undefined ? 8765 : Number(values.port), host: values.host || '127.0.0.1', openBrowser: !values['no-browser'] })
@@ -39,7 +39,7 @@ export async function main(args = process.argv.slice(2)) {
       try { result = await backupRemote(client, values.output, values.configuration || snapshotConfiguration(project, path.join(directory, 'configuration'))) } finally { removeWithin(os.tmpdir(), directory) }
     } else if (command === 'restore') { required('archive'); result = await restoreRemote(client, values.archive, state, values.resume) }
     else { const operation = (await client.json('GET')).operation; if (operation) { client.token = operation.token; await client.abort() } fs.rmSync(state, { force: true }); result = { ok: true } }
-  } else throw new Error('comando inválido: ' + command)
+  } else throw new Error(`Invalid command: ${command}`)
   console.log(JSON.stringify(result, null, 2))
 }
-if (process.argv[1] && fs.existsSync(process.argv[1]) && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) main().catch(error => { console.error(error.code ? 'não foi possível concluir a operação local' : error.message); process.exitCode = 1 })
+if (process.argv[1] && fs.existsSync(process.argv[1]) && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) main().catch(error => { console.error(error.code ? 'Could not complete the local operation' : error.message); process.exitCode = 1 })

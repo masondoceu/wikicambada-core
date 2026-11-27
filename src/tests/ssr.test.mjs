@@ -8,7 +8,7 @@ import { createWikiRouter } from '../scripts/routes/wiki-router.js'
 import { clearPublicCache } from '../scripts/services/wiki-api.js'
 import { database, loadFunction } from './helpers.mjs'
 
-test('SSR e CSR produzem o mesmo HTML editorial para a mesma configuração', () => {
+test('SSR and CSR produce the same editorial HTML for the same configuration', () => {
   const previous = globalThis.window
   const href = 'https://example.test/wiki/exemplo'
   const runtime = { config: SITE_CONFIG, href, origin: new URL(href).origin, version: APP_VERSION, pageUrl,
@@ -28,7 +28,7 @@ test('SSR e CSR produzem o mesmo HTML editorial para a mesma configuração', ()
   } finally { globalThis.window = previous }
 })
 
-test('partições existentes do sitemap continuam válidas quando as URLs são excluídas da indexação', async () => {
+test('Existing sitemap partitions stay valid when their URLs are excluded from indexing', async () => {
   const DB = await database()
   try {
     DB.sqlite.exec(`
@@ -49,7 +49,7 @@ test('partições existentes do sitemap continuam válidas quando as URLs são e
   } finally { DB.sqlite.close() }
 })
 
-test('a SPA mantém o artigo inicial e aceita só a navegação concorrente mais recente', async () => {
+test('The SPA keeps the initial article and commits only the latest concurrent navigation', async () => {
   const before = { document: globalThis.document, window: globalThis.window, history: globalThis.history, fetch: globalThis.fetch }
   const requests = []
   const renders = []
@@ -87,7 +87,7 @@ test('a SPA mantém o artigo inicial e aceita só a navegação concorrente mais
       if (route === '/api/pages/latest') return Response.json({ slug: 'latest', title: 'Latest', content: '## Destination' })
       if (route === '/api/pages') return Response.json({ pages: [], total: 2, revisions: 2, nextOffset: null })
       if (route === '/api/categories' || route === '/api/templates') return Response.json([])
-      assert.fail('consulta inesperada: ' + route)
+      assert.fail('Unexpected request: ' + route)
     }
     const router = createWikiRouter({ app, searchForm: { addEventListener() {} } })
     await router.boot({ slug: 'exemplo' })

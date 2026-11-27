@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { database, loadFunction } from './helpers.mjs'
 const { seedInitialContent } = await loadFunction('functions/api/_lib/initial-content.ts')
 const core = await loadFunction('functions/api/_lib/d1.ts')
-for (const language of ['pt-BR', 'en']) test(`seed nativo ${language} é atômico, editável e não recria páginas removidas`, async () => {
+for (const language of ['pt-BR', 'en']) test(`The ${language} initial content is atomic, editable and does not recreate removed pages`, async () => {
   const DB = await database(), env = { DB, WIKI_INITIAL_CONTENT: JSON.stringify({ id: 'new', language, homeSlug: 'home', guideSlug: 'guide' }) }
   try {
     DB.fail = sql => sql.includes('INSERT INTO revisions')
@@ -24,7 +24,7 @@ for (const language of ['pt-BR', 'en']) test(`seed nativo ${language} é atômic
     assert.equal((await core.listPageRevisions(env, 'home')).total, 2)
   } finally { DB.sqlite.close() }
 })
-test('seed não altera instalação existente e não atua sem configuração explícita de instalação nova', async () => {
+test('Initial content requires explicit setup and leaves existing installations untouched', async () => {
   const DB = await database()
   try {
     await seedInitialContent({ DB }); assert.equal(DB.sqlite.prepare('SELECT COUNT(*) n FROM pages').get().n, 0)

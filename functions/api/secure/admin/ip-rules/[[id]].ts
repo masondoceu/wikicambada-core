@@ -10,13 +10,13 @@ function cleanId(value: string[] | string | undefined) {
 
 export async function onRequestDelete({ request, env, params }: Context) {
   const user = await requireRole(request, env, 'moderator')
-  if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('Administration blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const id = cleanId(params.id)
-  if (!id) return error('regra ausente', 400)
+  if (!id) return error('Missing rule', 400)
 
   const result = await removeIpRule(env, id)
-  if (!result?.ok) return error('regra não encontrada', 404)
+  if (!result?.ok) return error('Rule not found', 404)
   return json(result)
 }

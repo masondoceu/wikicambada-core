@@ -11,8 +11,8 @@ function proposalId(value: string[] | string | undefined) {
 
 export async function onRequestGet({ request, env, params }: Context) {
   const user = await requireAccessUser(request, env)
-  if (!user) return error('painel restrito a editores autorizados', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('This panel is restricted to authorized editors', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const id = proposalId(params.id)
   if (!id) {
@@ -23,32 +23,32 @@ export async function onRequestGet({ request, env, params }: Context) {
   }
 
   const proposal = await readEditProposal(env, id)
-  if (!proposal) return error('proposta não encontrada', 404)
+  if (!proposal) return error('Proposal not found', 404)
   return json({ ok: true, proposal })
 }
 
 export async function onRequestPost({ request, env, params }: Context) {
   const user = await requireAccessUser(request, env)
-  if (!user) return error('painel restrito a editores autorizados', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('This panel is restricted to authorized editors', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const id = proposalId(params.id)
-  if (!id) return error('proposta ausente', 400)
+  if (!id) return error('Missing proposal', 400)
 
   const input = await request.json().catch(() => ({})) as { action?: string, creditMode?: string, expectedRevisionId?: string | null }
   if (input.action === 'approve') {
-    if (!Object.hasOwn(input, 'expectedRevisionId')) return error('revisão-base obrigatória', 428)
-    if (input.expectedRevisionId !== null && typeof input.expectedRevisionId !== 'string') return error('revisão-base inválida', 400)
+    if (!Object.hasOwn(input, 'expectedRevisionId')) return error('Base revision required', 428)
+    if (input.expectedRevisionId !== null && typeof input.expectedRevisionId !== 'string') return error('Invalid base revision', 400)
     const result = await approveEditProposal(env, id, user.email, user.displayName || user.name, input.creditMode, input.expectedRevisionId)
-    if (!result) return error('proposta não encontrada ou já revisada', 404)
+    if (!result) return error('Proposal not found or already reviewed', 404)
     return json({ ok: true, action: 'approved', ...result })
   }
 
   if (input.action === 'reject') {
     const proposal = await rejectEditProposal(env, id, user.email)
-    if (!proposal) return error('proposta não encontrada ou já revisada', 404)
+    if (!proposal) return error('Proposal not found or already reviewed', 404)
     return json({ ok: true, action: 'rejected', proposal })
   }
 
-  return error('ação inválida', 400)
+  return error('Invalid action', 400)
 }

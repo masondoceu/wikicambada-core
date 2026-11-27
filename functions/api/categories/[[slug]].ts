@@ -4,14 +4,14 @@ import { error, json } from '../_lib/response'
 type Context = EventContext<Env, string, { slug?: string[] }>
 
 export async function onRequestGet({ env, params }: Context) {
-  if (!(await globalSettingEnabled(env, 'categories'))) return error('categorias foram desativadas', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!(await globalSettingEnabled(env, 'categories'))) return error('Categories are disabled', 403)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const slug = normalizeSlug(params.slug)
   if (!slug) return json(await listCategories(env))
 
   const category = await readCategory(env, slug)
-  if (!category) return error('categoria não encontrada', 404)
+  if (!category) return error('Category not found', 404)
 
   return json(category)
 }

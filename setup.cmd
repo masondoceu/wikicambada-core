@@ -2,13 +2,13 @@
 setlocal
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Node.js 22.13 ou superior nao foi encontrado
+  echo Node.js 22.13 or later is required
   pause
   exit /b 1
 )
 node "%~dp0setup.js" %*
 if errorlevel 1 (
-  echo Nao foi possivel concluir o setup
+  echo Setup could not be completed
   pause
   exit /b 1
 )

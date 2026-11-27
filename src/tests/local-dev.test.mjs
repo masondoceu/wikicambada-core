@@ -6,7 +6,7 @@ import { database, loadFunction } from './helpers.mjs'
 import { localProxy } from '../scripts/dev.mjs'
 const auth = await loadFunction('functions/api/_lib/access.ts')
 
-test('bypass local exige prova do servidor, flag explícita e loopback, sem JWT ou headers manuais', async () => {
+test('Local bypass requires server proof, an explicit flag and loopback without manual JWTs or headers', async () => {
   const DB = await database(), secret = 'a'.repeat(64), env = { DB, DEV_BYPASS_AUTH: 'true', WIKI_LOCAL_AUTH_SECRET: secret }
   const worker = http.createServer(async (incoming, response) => {
     try { const user = await auth.readAccessUser(new Request(`http://${incoming.headers.host}${incoming.url}`, { headers: incoming.headers }), env); response.setHeader('content-type', 'application/json'); response.end(JSON.stringify(user)) }

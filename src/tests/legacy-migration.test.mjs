@@ -79,7 +79,7 @@ async function archive(source) {
   return file
 }
 
-test('migração por pasta preserva configuração e colisões em atualização normal', async () => {
+test('Directory migration preserves configuration and colliding assets during a regular update', async () => {
   const source = fixture(), destination = path.join(work, 'migrated-folder')
   const before = walk(source).map(file => [file, hash(file)])
   const result = await migrateLegacy(core, { source, destination })
@@ -115,7 +115,7 @@ test('migração por pasta preserva configuração e colisões em atualização 
   assert.deepEqual(walk(source).map(file => [file, hash(file)]), before)
 })
 
-test('setup local recebe ZIP de origem e bloqueia a API de migração sem token', async () => {
+test('Local setup accepts a source ZIP and requires a token for migration', async () => {
   const source = fixture(), zip = await archive(source), destination = path.join(work, 'migrated-zip')
   const server = await startServer({ project: core, port: 0, openBrowser: false })
   try {
@@ -132,51 +132,51 @@ test('setup local recebe ZIP de origem e bloqueia a API de migração sem token'
     const spare = new Project(path.join(work, 'core-copy'))
     fs.mkdirSync(spare.root)
     await extractZip(coreZip, spare.root)
-    await assert.rejects(updateFromBase64(spare, fs.readFileSync(zip).toString('base64')), /manifesto não pertence/)
+    await assert.rejects(updateFromBase64(spare, fs.readFileSync(zip).toString('base64')), /does not identify WikiCambada Core/)
   } finally {
     await server.shutdown()
     await server.closed
   }
 })
 
-test('migração recusa origem inválida, destino ocupado e caminhos que sobrepõem a origem', async () => {
+test('Migration rejects invalid sources, nonempty destinations and overlapping paths', async () => {
   const source = fixture(), destination = path.join(work, 'not-created')
-  await assert.rejects(migrateLegacy(core, { source, destination: path.join(source, 'unsafe') }), /fora do Core e da origem/)
-  await assert.rejects(migrateLegacy(core, { source, destination: core.file('unsafe') }), /fora do Core e da origem/)
-  await assert.rejects(migrateLegacy(core, { source, destination: work }), /fora do Core e da origem/)
+  await assert.rejects(migrateLegacy(core, { source, destination: path.join(source, 'unsafe') }), /outside both the Core and the source/)
+  await assert.rejects(migrateLegacy(core, { source, destination: core.file('unsafe') }), /outside both the Core and the source/)
+  await assert.rejects(migrateLegacy(core, { source, destination: work }), /outside both the Core and the source/)
   const occupied = path.join(work, 'occupied')
   fs.mkdirSync(occupied)
   fs.writeFileSync(path.join(occupied, 'keep.txt'), 'preserve')
-  await assert.rejects(migrateLegacy(core, { source, destination: occupied }), /pasta nova/)
+  await assert.rejects(migrateLegacy(core, { source, destination: occupied }), /new directory/)
   assert.equal(fs.readFileSync(path.join(occupied, 'keep.txt'), 'utf8'), 'preserve')
   fs.writeFileSync(path.join(source, 'package.json'), '{"version":"1.0.12"}')
   assert.throws(() => inspectLegacy(source, core), /1\.0\.13/)
   fs.writeFileSync(path.join(source, 'package.json'), '{"version":"1.0.13"}')
   fs.unlinkSync(path.join(source, 'functions/api/health.ts'))
-  assert.throws(() => inspectLegacy(source, core), /incompleta/)
+  assert.throws(() => inspectLegacy(source, core), /Incomplete legacy installation/)
   fs.copyFileSync(core.file('functions/api/health.ts'), path.join(source, 'functions/api/health.ts'))
   fs.appendFileSync(path.join(source, core.release().migrations[0]), '\nSELECT 1;')
-  await assert.rejects(migrateLegacy(core, { source, destination }), /migration legada divergente/)
+  await assert.rejects(migrateLegacy(core, { source, destination }), /Legacy migration does not match/)
   await assert.rejects(migrateLegacy(core, { file: { data: Buffer.from('not a zip').toString('base64') }, destination }))
   assert.ok(!fs.existsSync(destination))
   assert.ok(!fs.readdirSync(path.join(work, '.wikicambada')).some(name => name.startsWith('legacy-migration-')))
 })
 
-test('falha na publicação não deixa destino parcial e permite repetir', async t => {
+test('A publication failure leaves no partial destination and allows retries', async t => {
   const source = fixture(), destination = path.join(work, 'retry')
   const rename = fs.renameSync
   const mock = t.mock.method(fs, 'renameSync', (from, to) => {
-    if (to === destination) throw new Error('interrupção de teste')
+    if (to === destination) throw new Error('test interruption')
     return rename(from, to)
   })
-  try { await assert.rejects(migrateLegacy(core, { source, destination }), /interrupção de teste/) }
+  try { await assert.rejects(migrateLegacy(core, { source, destination }), /test interruption/) }
   finally { mock.mock.restore() }
   assert.ok(!fs.existsSync(destination))
   assert.ok(!fs.readdirSync(path.join(work, '.wikicambada')).some(name => name.startsWith('legacy-migration-')))
   assert.equal((await migrateLegacy(core, { source, destination })).ok, true)
 })
 
-test('encerramento forçado libera o lock e permite nova migração', { timeout: 90000 }, async () => {
+test('Forced termination releases the lock and allows another migration', { timeout: 90000 }, async () => {
   const source = fixture(), destination = path.join(work, 'after-interruption')
   const script = `
     import fs from 'node:fs';

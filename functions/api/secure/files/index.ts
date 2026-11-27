@@ -109,8 +109,8 @@ function markdownForFile(file: any, caption = '', align = 'right', width = 260) 
 
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireAccessUser(request, env)
-  if (!user) return error('listagem de arquivos bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado para listar arquivos', 501)
+  if (!user) return error('File listing blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound for file listing', 501)
 
   const url = new URL(request.url)
   const search = url.searchParams.get('q') || ''
@@ -122,35 +122,35 @@ export async function onRequestGet({ request, env }: Context) {
 
 export async function onRequestPost({ request, env }: Context) {
   const user = await requireAccessUser(request, env)
-  if (!user) return error('upload bloqueado pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado para registrar uploads', 501)
-  if (!env.WIKI_BUCKET) return error('R2 ainda não foi ligado para receber uploads', 501)
-  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('uploads de mídia foram desativados', 403)
+  if (!user) return error('Upload blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound for upload registration', 501)
+  if (!env.WIKI_BUCKET) return error('R2 is not bound for uploads', 501)
+  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('Media uploads are disabled', 403)
 
   const contentLength = Number(request.headers.get('content-length') || 0)
   if (contentLength > MAX_REQUEST_BYTES) {
-    return error(`o arquivo enviado excede o limite de ${formatBytes(MAX_UPLOAD_BYTES)}`, 413)
+    return error(`The uploaded file exceeds the ${formatBytes(MAX_UPLOAD_BYTES)} limit`, 413)
   }
 
   const form = await request.formData().catch(() => null)
-  if (!form) return error('formulário de upload inválido', 400)
+  if (!form) return error('Invalid upload form', 400)
 
   const file = form.get('file') as File | null
-  if (!file || typeof file.arrayBuffer !== 'function') return error('nenhum arquivo foi enviado', 400)
+  if (!file || typeof file.arrayBuffer !== 'function') return error('No file was uploaded', 400)
 
   const mimeType = String(file.type || '').toLowerCase()
   if (!ALLOWED_FILE_TYPES.has(mimeType)) {
-    return error('tipo de arquivo não permitido. use PNG, JPEG, WebP, GIF, MP4, WebM, OGG/OGV, MOV, MP3, WAV, FLAC, AAC ou M4A', 415)
+    return error('Unsupported file type. Use PNG, JPEG, WebP, GIF, MP4, WebM, OGG/OGV, MOV, MP3, WAV, FLAC, AAC or M4A', 415)
   }
 
-  if (!file.size) return error('arquivo vazio', 400)
+  if (!file.size) return error('Empty file', 400)
   if (file.size > MAX_UPLOAD_BYTES) {
-    return error(`o arquivo excede o limite de ${formatBytes(MAX_UPLOAD_BYTES)}`, 413)
+    return error(`The file exceeds the ${formatBytes(MAX_UPLOAD_BYTES)} limit`, 413)
   }
 
   const filename = ensureFilenameExtension(safeFilename(file.name || 'arquivo'), mimeType)
   const buffer = await file.arrayBuffer()
-  if (!matchesMediaType(buffer, mimeType)) return error('o conteúdo do arquivo não corresponde ao tipo informado', 415)
+  if (!matchesMediaType(buffer, mimeType)) return error('The file contents do not match the declared type', 415)
   const digest = hex(await crypto.subtle.digest('SHA-256', buffer))
   const now = new Date()
   const year = String(now.getUTCFullYear())
@@ -194,7 +194,7 @@ export async function onRequestPost({ request, env }: Context) {
 
   if (!upload) {
     await env.WIKI_BUCKET.delete(r2Key).catch(() => undefined)
-    return error('não foi possível registrar o arquivo enviado', 500)
+    return error('Could not register the uploaded file', 500)
   }
 
   return json({

@@ -445,6 +445,8 @@ O Pages publica exclusivamente `.wikicambada/public`, preparado por `npm run bui
 
 ## Desenvolvimento
 
+Os diagnósticos técnicos e a saída de linha de comando usam inglês. O setup, a interface da wiki e o conteúdo editorial mantêm suas próprias configurações de idioma. Clientes da API podem solicitar erros em inglês com `X-Wiki-Language: en`. As requisições sem esse cabeçalho mantêm as respostas em português, os códigos HTTP e os campos JSON existentes.
+
 Em um clone novo, `node setup.js verify` confere os arquivos do Core e a estrutura local da configuração. Para instalar as dependências do lockfile, execute `npm ci`. Use uma cópia separada para testar a configuração de uma wiki, pois o setup grava `site.json`, `installation.json` e `wrangler.toml` na pasta em que está instalado.
 
 Servidor local do Pages:

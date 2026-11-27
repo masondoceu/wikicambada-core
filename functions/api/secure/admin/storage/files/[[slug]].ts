@@ -6,11 +6,11 @@ type Context = EventContext<Env, string, { slug?: string[] | string }>
 
 export async function onRequestPost({ request, env, params }: Context) {
   const user = await requireRole(request, env, 'moderator')
-  if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('Administration blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const slug = normalizeSlug(params.slug)
-  if (!slug) return error('arquivo ausente', 400)
+  if (!slug) return error('Missing file', 400)
 
   const input: any = await request.json().catch(() => null)
   const action = String(input?.action || '').trim()
@@ -20,22 +20,22 @@ export async function onRequestPost({ request, env, params }: Context) {
       filename: input?.filename,
       description: input?.description
     })
-    if (!file) return error('arquivo não encontrado', 404)
+    if (!file) return error('File not found', 404)
     return json({ ok: true, file })
   }
 
-  return error('ação inválida', 400)
+  return error('Invalid action', 400)
 }
 
 export async function onRequestDelete({ request, env, params }: Context) {
   const user = await requireRole(request, env, 'moderator')
-  if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('Administration blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const slug = normalizeSlug(params.slug)
-  if (!slug) return error('arquivo ausente', 400)
+  if (!slug) return error('Missing file', 400)
 
   const result = await deleteUpload(env, slug, user.email)
-  if (!result) return error('arquivo não encontrado', 404)
+  if (!result) return error('File not found', 404)
   return json(result)
 }

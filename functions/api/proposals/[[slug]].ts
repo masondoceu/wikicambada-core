@@ -11,20 +11,20 @@ function managedNamespace(slug: string) {
 
 export async function onRequestPost({ request, env, params }: Context) {
   const slug = normalizeSlug(params.slug)
-  if (!slug) return error('slug ausente', 400)
-  if (managedNamespace(slug)) return error('este namespace é gerenciado pelo sistema e não aceita sugestões', 403)
-  if (slug.startsWith('discussao/') && !(await globalSettingEnabled(env, 'talkPages'))) return error('páginas de discussão foram desativadas', 403)
-  if (slug.startsWith('usuario/') && !(await globalSettingEnabled(env, 'userPages'))) return error('páginas de usuário foram desativadas', 403)
-  if (!(await globalSettingEnabled(env, 'publicSuggestions'))) return error('sugestões públicas foram desativadas', 403)
+  if (!slug) return error('Missing slug', 400)
+  if (managedNamespace(slug)) return error('This system namespace does not accept suggestions', 403)
+  if (slug.startsWith('discussao/') && !(await globalSettingEnabled(env, 'talkPages'))) return error('Discussion pages are disabled', 403)
+  if (slug.startsWith('usuario/') && !(await globalSettingEnabled(env, 'userPages'))) return error('User pages are disabled', 403)
+  if (!(await globalSettingEnabled(env, 'publicSuggestions'))) return error('Public suggestions are disabled', 403)
 
   const ipRule = await getActiveIpRule(env, request, 'block_suggestions')
   if (ipRule) {
-    return error('este endereço IP não pode enviar sugestões no momento', 403)
+    return error('This IP address cannot submit suggestions at this time', 403)
   }
 
   const input: any = await request.json().catch(() => null)
   if (!input || typeof input.title !== 'string' || typeof input.content !== 'string') {
-    return error('payload inválido', 400)
+    return error('Invalid payload', 400)
   }
 
   try {
@@ -39,8 +39,8 @@ export async function onRequestPost({ request, env, params }: Context) {
       discord: { sent: discord.sent }
     })
   } catch (exception) {
-    const message = exception instanceof Error ? exception.message : 'erro interno'
-    const status = exception instanceof EditorialError ? exception.status : message.startsWith('edição recusada:') ? 400 : 500
-    return error(status < 500 ? `não foi possível enviar a proposta: ${message}` : 'não foi possível enviar a proposta', status)
+    const message = exception instanceof Error ? exception.message : 'Internal error'
+    const status = exception instanceof EditorialError ? exception.status : message.startsWith('Edit rejected:') ? 400 : 500
+    return error(status < 500 ? `Could not submit the proposal: ${message}` : 'Could not submit the proposal', status)
   }
 }

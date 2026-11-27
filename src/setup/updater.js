@@ -29,7 +29,7 @@ function legacyAssets(project) {
 }
 export function versionTuple(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-(indev|alpha|beta|rc|r)(?:[.-]?(\d+))?)?$/.exec(String(value || ''))
-  if (!match) throw new Error('versão não suportada')
+  if (!match) throw new Error('Unsupported version')
   return [+match[1], +match[2], +match[3], { indev: -1, alpha: 0, beta: 1, rc: 2, r: 4 }[match[4]] ?? 3, +(match[5] || 0)]
 }
 export function compareVersions(a, b) { const first = versionTuple(a), second = versionTuple(b); for (let i = 0; i < first.length; i++) if (first[i] !== second[i]) return first[i] - second[i]; return 0 }
@@ -42,10 +42,10 @@ export async function extractZip(archive, target) {
       bundle.on('entry', entry => {
         try {
           const name = safePath(entry.fileName.replace(/\/$/, '')), key = name.toLowerCase(), mode = entry.externalFileAttributes >>> 16, type = mode & 0o170000
-          if (seen.has(key) || (type && ![0o100000, 0o040000].includes(type))) throw new Error('o ZIP contém caminhos duplicados ou tipos de arquivo não permitidos')
+          if (seen.has(key) || (type && ![0o100000, 0o040000].includes(type))) throw new Error('The ZIP contains duplicate paths or unsupported file types')
           seen.add(key); entries.push(entry)
           size += entry.uncompressedSize
-          if (entries.length > 5000 || size > 256 * 1024 * 1024) throw new Error('o ZIP excede os limites permitidos')
+          if (entries.length > 5000 || size > 256 * 1024 * 1024) throw new Error('The ZIP exceeds the allowed limits')
           bundle.readEntry()
         } catch (error) { reject(error) }
       })
@@ -59,14 +59,14 @@ export async function extractZip(archive, target) {
       zip.on('entry', async entry => {
         try {
           const name = safePath(entry.fileName.replace(/\/$/, '')), file = path.join(target, name)
-          if (!inside(target, file)) throw new Error('caminho inválido')
+          if (!inside(target, file)) throw new Error('Invalid path')
           checkAncestors(file)
           if (entry.fileName.endsWith('/')) fs.mkdirSync(file, { recursive: true })
           else {
             fs.mkdirSync(path.dirname(file), { recursive: true })
             const stream = await new Promise((resolve, reject) => zip.openReadStream(entry, (error, value) => error ? reject(error) : resolve(value)))
             let bytes = 0
-            await pipeline(stream, new Transform({ transform(chunk, encoding, callback) { bytes += chunk.length; callback(bytes > entry.uncompressedSize ? new Error('tamanho ZIP inválido') : null, chunk) } }), fs.createWriteStream(file, { flags: 'wx', mode: (entry.externalFileAttributes >>> 16 & 0o777) || 0o600 }))
+            await pipeline(stream, new Transform({ transform(chunk, encoding, callback) { bytes += chunk.length; callback(bytes > entry.uncompressedSize ? new Error('Invalid ZIP size') : null, chunk) } }), fs.createWriteStream(file, { flags: 'wx', mode: (entry.externalFileAttributes >>> 16 & 0o777) || 0o600 }))
           }
           zip.readEntry()
         } catch (error) { reject(error) }
@@ -76,23 +76,23 @@ export async function extractZip(archive, target) {
 }
 export function releaseManifest(root) { return Object.fromEntries(walk(root, new Set([...IGNORE, '.wikicambada'])).filter(file => path.relative(root, file) !== 'wikicambada-files.json').map(file => [path.relative(root, file).replaceAll(path.sep, '/'), hash(file)])) }
 export function validateRelease(project, source, release = readJson(path.join(source, 'wikicambada-release.json'))) {
-  if (release.product !== 'WikiCambada Core' || !release.version) throw new Error('o manifesto não pertence ao WikiCambada Core ou não informa a versão')
+  if (release.product !== 'WikiCambada Core' || !release.version) throw new Error('The manifest does not identify WikiCambada Core and its version')
   versionTuple(release.version)
   const current = project.installation().coreVersion
-  if (current && release.minimumUpgradeableVersion && compareVersions(current, release.minimumUpgradeableVersion) < 0) throw new Error('esta atualização exige WikiCambada Core ' + release.minimumUpgradeableVersion + ' ou superior')
-  if (current && compareVersions(release.version, current) < 0) throw new Error('o pacote selecionado é anterior à versão instalada')
+  if (current && release.minimumUpgradeableVersion && compareVersions(current, release.minimumUpgradeableVersion) < 0) throw new Error(`This update requires WikiCambada Core ${release.minimumUpgradeableVersion} or later`)
+  if (current && compareVersions(release.version, current) < 0) throw new Error('The selected package is older than the installed version')
   const manifestName = safePath(release.filesManifest), manifest = readJson(path.join(source, manifestName)), files = manifest.files || manifest, actual = Object.fromEntries(walk(source).filter(file => path.relative(source, file).replaceAll(path.sep, '/') !== manifestName).map(file => [path.relative(source, file).replaceAll(path.sep, '/'), hash(file)]))
-  if (Object.keys(actual).some(name => name.split('/').some(part => IGNORE.has(part) || part === '.wikicambada'))) throw new Error('o pacote contém arquivos fora da distribuição')
+  if (Object.keys(actual).some(name => name.split('/').some(part => IGNORE.has(part) || part === '.wikicambada'))) throw new Error('The package contains files outside the distribution')
   delete actual[manifestName]
-  if (!Object.keys(files).length || Object.keys(actual).length !== Object.keys(files).length || Object.entries(files).some(([name, digest]) => { safePath(name); return actual[name] !== digest })) throw new Error('o pacote falhou na verificação de integridade: arquivos ausentes, não registrados ou hashes diferentes')
+  if (!Object.keys(files).length || Object.keys(actual).length !== Object.keys(files).length || Object.entries(files).some(([name, digest]) => { safePath(name); return actual[name] !== digest })) throw new Error('Package integrity check failed: missing files, unlisted files or hash mismatches')
   const bilingual = Object.hasOwn(files, 'README.md') && Object.hasOwn(files, 'readmes/README.pt-BR.md')
   const previousReadme = Object.hasOwn(files, 'README.MD') && !Object.hasOwn(files, 'readmes/README.pt-BR.md')
-  if (!bilingual && !previousReadme) throw new Error('a documentação do Core está incompleta')
+  if (!bilingual && !previousReadme) throw new Error('The Core documentation is incomplete')
   const pkg = readJson(path.join(source, 'package.json')), lock = readJson(path.join(source, 'package-lock.json')), locked = lock.packages?.[''] || {}
-  if ([pkg, lock, locked].some(record => record.version !== release.version)) throw new Error('versões divergentes entre a release, o pacote e o lockfile')
-  if ([lock, locked].some(record => record.name !== pkg.name) || !isDeepStrictEqual(locked.devDependencies || {}, pkg.devDependencies || {}) || !isDeepStrictEqual(locked.engines || {}, pkg.engines || {})) throw new Error('o lockfile não corresponde ao pacote')
+  if ([pkg, lock, locked].some(record => record.version !== release.version)) throw new Error('Version mismatch between the release, package and lockfile')
+  if ([lock, locked].some(record => record.name !== pkg.name) || !isDeepStrictEqual(locked.devDependencies || {}, pkg.devDependencies || {}) || !isDeepStrictEqual(locked.engines || {}, pkg.engines || {})) throw new Error('The lockfile does not match the package')
   const migrations = fs.readdirSync(path.join(source, 'src/data/migrations')).filter(name => name.endsWith('.sql')).sort().map(name => 'src/data/migrations/' + name)
-  if (!Number.isInteger(release.databaseSchema) || release.databaseSchema < 1 || migrations.length !== release.databaseSchema || JSON.stringify(migrations) !== JSON.stringify(release.migrations) || migrations.some((name, index) => !path.basename(name).startsWith(String(index + 1).padStart(4, '0') + '_'))) throw new Error('o schema não corresponde ao inventário de migrations')
+  if (!Number.isInteger(release.databaseSchema) || release.databaseSchema < 1 || migrations.length !== release.databaseSchema || JSON.stringify(migrations) !== JSON.stringify(release.migrations) || migrations.some((name, index) => !path.basename(name).startsWith(String(index + 1).padStart(4, '0') + '_'))) throw new Error('The schema does not match the migration inventory')
   return release
 }
 export function modifiedCoreFiles(project) {
@@ -108,18 +108,18 @@ export function backupProject(project, target = project.file('.wikicambada/backu
 }
 export function restoreBackup(project, source) {
   const backups = project.file('.wikicambada/backups')
-  if (!inside(backups, source) || !fs.statSync(source).isDirectory()) throw new Error('backup fora do diretório de recuperação')
+  if (!inside(backups, source) || !fs.statSync(source).isDirectory()) throw new Error('The backup is outside the recovery directory')
   walk(source); walk(project.root, new Set([...IGNORE, '.wikicambada']))
   for (const name of fs.readdirSync(project.root)) if (!IGNORE.has(name) && name !== '.wikicambada') removeWithin(project.root, project.file(name))
   copyTree(source, project.root)
 }
 export async function updateFromBase64(project, data, filename = 'update.zip', expectedSha256) {
   return operationLock(project.root, async () => {
-    if (['update', 'configuration'].some(kind => fs.existsSync(project.file(`.wikicambada/${kind}-journal.json`)))) throw new Error('há uma operação interrompida; execute setup.js recover-local antes de continuar')
+    if (['update', 'configuration'].some(kind => fs.existsSync(project.file(`.wikicambada/${kind}-journal.json`)))) throw new Error('An operation was interrupted. Run setup.js recover-local before continuing')
     const bytes = decodeBase64(data, 64 * 1024 * 1024)
-    if (expectedSha256 !== undefined && (!/^[a-f0-9]{64}$/i.test(expectedSha256) || createHash('sha256').update(bytes).digest('hex') !== expectedSha256.toLowerCase())) throw new Error('o ZIP não corresponde ao hash confiável informado')
+    if (expectedSha256 !== undefined && (!/^[a-f0-9]{64}$/i.test(expectedSha256) || createHash('sha256').update(bytes).digest('hex') !== expectedSha256.toLowerCase())) throw new Error('The ZIP does not match the supplied trusted hash')
     const modifications = modifiedCoreFiles(project)
-    if (modifications.length) throw new Error('há alterações locais no Core; resolva os conflitos antes de atualizar: ' + modifications.slice(0, 20).join(', '))
+    if (modifications.length) throw new Error(`Local Core files have changed. Resolve these conflicts before updating: ${modifications.slice(0, 20).join(', ')}`)
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'wikicambada-update-'))
     try {
       const archive = path.join(temporary, 'update.zip'), extracted = path.join(temporary, 'extracted')
@@ -132,7 +132,7 @@ export async function updateFromBase64(project, data, filename = 'update.zip', e
       for (const file of walk(source)) {
         const relative = path.relative(source, file).replaceAll(path.sep, '/')
         if (relative === 'README.md' && renameReadme) continue
-        if (fs.existsSync(project.file(relative)) && !isPreserved(relative) && !protectedAssets.has(relative) && !Object.hasOwn(previousFiles, relative) && !['wikicambada-files.json', 'wikicambada-release.json'].includes(relative)) throw new Error('arquivo da instalação em conflito com o pacote: ' + relative)
+        if (fs.existsSync(project.file(relative)) && !isPreserved(relative) && !protectedAssets.has(relative) && !Object.hasOwn(previousFiles, relative) && !['wikicambada-files.json', 'wikicambada-release.json'].includes(relative)) throw new Error(`Installation file conflicts with the package: ${relative}`)
       }
       const backup = backupProject(project), stateFile = project.file('.wikicambada/state.json'), state = fs.existsSync(stateFile) ? fs.readFileSync(stateFile).toString('base64') : null
       project.write('.wikicambada/update-journal.json', { backup: path.relative(project.root, backup).replaceAll(path.sep, '/'), state })
@@ -163,7 +163,7 @@ export async function updateFromBase64(project, data, filename = 'update.zip', e
         project.write('src/config/installation.json', installation)
         project.generateWrangler(config)
         const verification = project.verify()
-        if (!verification.ok) throw new Error('a verificação pós-atualização falhou')
+        if (!verification.ok) throw new Error('Post-update verification failed')
         project.write('.wikicambada/state.json', { managedBy: 'WikiCambada Core setup', coreVersion: release.version, configSchema: installation.configSchema, databaseSchema: installation.databaseSchema, lastUpdatedAt: installation.lastUpdatedAt })
         fs.unlinkSync(project.file('.wikicambada/update-journal.json'))
         return { ok: true, version: release.version, backup, verification, release, modifiedFilesBeforeUpdate: modifications }
@@ -184,7 +184,7 @@ export async function recoverInterrupted(project) {
       const record = readJson(update), backup = project.file(safePath(record.backup))
       const state = record.state === null ? null : record.state === '' ? Buffer.alloc(0) : decodeBase64(record.state, 1024 * 1024)
       checkAncestors(project.file('.wikicambada/state.json'))
-      if (backup === savedCurrent) throw new Error('backup de recuperação inválido')
+      if (backup === savedCurrent) throw new Error('Invalid recovery backup')
       restoreBackup(project, backup)
       if (state === null) fs.rmSync(project.file('.wikicambada/state.json'), { force: true }); else fs.writeFileSync(project.file('.wikicambada/state.json'), state)
       fs.unlinkSync(update)
@@ -192,10 +192,10 @@ export async function recoverInterrupted(project) {
     if (fs.existsSync(configure)) {
       const record = readJson(configure), values = Object.entries(record.files || {}).map(([name, content]) => {
         safePath(name)
-        if (!isPreserved(name) && name !== '.wikicambada/state.json') throw new Error('arquivo fora do escopo de configuração')
+        if (!isPreserved(name) && name !== '.wikicambada/state.json') throw new Error('File outside the configuration scope')
         checkAncestors(project.file(name)); return [project.file(name), content === null ? null : content === '' ? Buffer.alloc(0) : decodeBase64(content, 16 * 1024 * 1024)]
       })
-      if (!values.length) throw new Error('registro de recuperação inválido')
+      if (!values.length) throw new Error('Invalid recovery record')
       for (const [file, content] of values) { if (content === null) fs.rmSync(file, { force: true }); else { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content) } }
       fs.unlinkSync(configure)
     }

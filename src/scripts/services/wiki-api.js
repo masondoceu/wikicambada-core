@@ -1,3 +1,5 @@
+import { interfaceLanguage } from '../core/i18n.js'
+
 let pageApiHasData = null
 const PUBLIC_CACHE_TTL = 30 * 1000
 const publicCache = new Map()
@@ -43,20 +45,20 @@ function setKnownAccessSession(value) {
 
 async function readJsonResponse(response) {
   const text = await response.text()
-  if (!text) throw new Error('resposta vazia da api')
+  if (!text) throw new Error('Empty API response')
 
   try {
     const value = JSON.parse(text)
-    if (value === null) throw new Error('resposta inválida da api')
+    if (value === null) throw new Error('Invalid API response')
     return value
   } catch {
-    throw new Error('resposta inválida da api')
+    throw new Error('Invalid API response')
   }
 }
 
 async function fetchApi(path, options) {
-  try { return await fetch(path, options) }
-  catch (cause) { throw Object.assign(new Error('não foi possível conectar à wiki'), { kind: 'network', cause }) }
+  try { return await fetch(path, { ...options, headers: { ...options.headers, 'x-wiki-language': interfaceLanguage() } }) }
+  catch (cause) { throw Object.assign(new Error('Could not connect to the wiki'), { kind: 'network', cause }) }
 }
 
 async function apiGet(path, options = {}) {
@@ -67,7 +69,7 @@ async function apiGet(path, options = {}) {
   const response = await fetchApi(path, { headers: { accept: 'application/json', 'x-wiki-request': '1' } })
   if (!response.ok) {
     const data = await readJsonResponse(response).catch(() => null)
-    const message = data?.error || `api ${response.status}`
+    const message = data?.error || `HTTP ${response.status}`
     throw Object.assign(new Error(message), { status: response.status })
   }
 
@@ -84,7 +86,7 @@ async function apiDelete(path) {
 
   const data = response.ok ? await readJsonResponse(response) : await readJsonResponse(response).catch(() => null)
   if (!response.ok) {
-    const message = data?.error || `api ${response.status}`
+    const message = data?.error || `HTTP ${response.status}`
     throw Object.assign(new Error(message), { status: response.status })
   }
 
@@ -104,7 +106,7 @@ async function apiPost(path, body) {
 
   const data = response.ok ? await readJsonResponse(response) : await readJsonResponse(response).catch(() => null)
   if (!response.ok) {
-    const message = data?.error || `api ${response.status}`
+    const message = data?.error || `HTTP ${response.status}`
     throw Object.assign(new Error(message), { status: response.status })
   }
 
@@ -120,7 +122,7 @@ async function apiPostForm(path, body) {
 
   const data = response.ok ? await readJsonResponse(response) : await readJsonResponse(response).catch(() => null)
   if (!response.ok) {
-    const message = data?.error || `api ${response.status}`
+    const message = data?.error || `HTTP ${response.status}`
     throw Object.assign(new Error(message), { status: response.status })
   }
 
@@ -145,13 +147,13 @@ export async function listPages(options = {}) {
     throw error
   }
 
-  throw new Error('resposta de listagem inválida')
+  throw new Error('Invalid page listing response')
 }
 
 export async function getPageList(options = {}) {
   const params = new URLSearchParams({ paged: '1', limit: String(options.limit || 100), offset: String(options.offset || 0), sort: options.sort || 'title' })
   const data = await apiGet(`/api/pages?${params}`)
-  if (!Array.isArray(data?.pages) || !Number.isInteger(data.total) || !Object.hasOwn(data, 'nextOffset')) throw new Error('resposta de listagem inválida')
+  if (!Array.isArray(data?.pages) || !Number.isInteger(data.total) || !Object.hasOwn(data, 'nextOffset')) throw new Error('Invalid page listing response')
   return data
 }
 
@@ -172,7 +174,7 @@ export async function getPage(slug, options = {}) {
       pageApiHasData = true
       return page
     }
-    throw new Error('resposta de página inválida')
+    throw new Error('Invalid page response')
   } catch (error) { if (error.status !== 404) throw error }
 
   return null
@@ -186,7 +188,7 @@ export async function getPageFresh(slug) {
 export async function getRandomPage() {
   try {
     const page = await apiGet('/api/pages/random')
-    if (typeof page?.slug !== 'string' || typeof page.content !== 'string') throw new Error('resposta de página inválida')
+    if (typeof page?.slug !== 'string' || typeof page.content !== 'string') throw new Error('Invalid page response')
     pageApiHasData = true
     return page
   } catch (error) { if (error.status !== 404) throw error }
@@ -202,18 +204,18 @@ export async function searchPages(query) {
     if (Array.isArray(results)) return results
   } catch (error) { throw error }
 
-  throw new Error('resposta de busca inválida')
+  throw new Error('Invalid search response')
 }
 
 export async function getSearchPage(query, offset = 0) {
   const data = await apiGet(`/api/search?${new URLSearchParams({ q: query, paged: '1', offset: String(offset) })}`)
-  if (!Array.isArray(data?.results) || !Number.isInteger(data.total) || !Object.hasOwn(data, 'nextOffset')) throw new Error('resposta de busca inválida')
+  if (!Array.isArray(data?.results) || !Number.isInteger(data.total) || !Object.hasOwn(data, 'nextOffset')) throw new Error('Invalid search response')
   return data
 }
 
 export async function listRevisions(slug, offset = 0) {
   const data = await apiGet(`/api/revisions/${encodeURIComponent(slug)}?offset=${offset}`)
-  if (!Array.isArray(data?.revisions) || !Number.isInteger(data.total) || !Object.hasOwn(data, 'nextOffset')) throw new Error('resposta de histórico inválida')
+  if (!Array.isArray(data?.revisions) || !Number.isInteger(data.total) || !Object.hasOwn(data, 'nextOffset')) throw new Error('Invalid history response')
   return data
 }
 
@@ -224,14 +226,14 @@ export async function getRevision(slug, revisionNumber) {
 }
 
 export async function restoreRevision(slug, revisionNumber, summary, expectedRevisionId) {
-  if (expectedRevisionId === undefined) throw new Error('revisão-base obrigatória')
+  if (expectedRevisionId === undefined) throw new Error('Base revision required')
   const result = await apiPost(`/api/secure/revisions/${encodeURIComponent(slug)}`, {
     action: 'restore',
     expectedRevisionId,
     revisionNumber,
     summary
   })
-  if (!result?.ok || !result?.page?.currentRevisionId) throw new Error('resposta de restauração inválida')
+  if (!result?.ok || !result?.page?.currentRevisionId) throw new Error('Invalid restore response')
   pageApiHasData = true
   clearPublicCache()
   return result?.page || result
@@ -239,7 +241,7 @@ export async function restoreRevision(slug, revisionNumber, summary, expectedRev
 
 export async function savePage(slug, payload) {
   const result = await apiPost(`/api/secure/pages/${encodeURIComponent(slug)}/revisions`, payload)
-  if (!result?.ok || !result?.page?.currentRevisionId) throw new Error('resposta de gravação inválida')
+  if (!result?.ok || !result?.page?.currentRevisionId) throw new Error('Invalid write response')
   pageApiHasData = true
   clearPublicCache()
   return result?.page || result
@@ -247,7 +249,7 @@ export async function savePage(slug, payload) {
 
 export async function submitEditProposal(slug, payload) {
   const result = await apiPost(`/api/proposals/${encodeURIComponent(slug)}`, payload)
-  if (!result?.ok || !result?.stored) throw new Error('a proposta não foi armazenada')
+  if (!result?.ok || !result?.stored) throw new Error('The proposal was not stored')
   return result
 }
 
@@ -260,7 +262,7 @@ export async function deletePage(slug) {
 export async function getFile(slug) {
   try {
     const file = await apiGet(`/api/files/${encodeURIComponent(slug)}`)
-    if (typeof file?.slug !== 'string' || typeof file.mimeType !== 'string') throw new Error('resposta de arquivo inválida')
+    if (typeof file?.slug !== 'string' || typeof file.mimeType !== 'string') throw new Error('Invalid file response')
     return file
   } catch (error) { if (error.status !== 404) throw error }
   return null
@@ -275,7 +277,7 @@ export async function listFiles(options = {}) {
   if (options.offset) params.set('offset', String(options.offset))
   const suffix = params.toString() ? `?${params}` : ''
   const files = await apiGet(`/api/secure/files${suffix}`)
-  if (!Array.isArray(files)) throw new Error('resposta de arquivos inválida')
+  if (!Array.isArray(files)) throw new Error('Invalid file listing response')
   return files
 }
 
@@ -289,7 +291,7 @@ export async function uploadImage(file, options = {}) {
   if (options.slug) form.set('slug', options.slug)
 
   const result = await apiPostForm('/api/secure/files', form)
-  if (!result?.file) throw new Error('resposta de upload inválida')
+  if (!result?.file) throw new Error('Invalid upload response')
   return result
 }
 
@@ -297,7 +299,7 @@ export async function uploadImage(file, options = {}) {
 export async function listCategories() {
   try {
     const categories = await apiGet('/api/categories')
-    if (!Array.isArray(categories)) throw new Error('resposta de categorias inválida')
+    if (!Array.isArray(categories)) throw new Error('Invalid category listing response')
     return categories
   } catch (error) { throw error }
 }
@@ -305,7 +307,7 @@ export async function listCategories() {
 export async function getCategory(slug) {
   try {
     const category = await apiGet(`/api/categories/${encodeURIComponent(slug)}`)
-    if (typeof category?.slug !== 'string' || typeof category.name !== 'string' || !Array.isArray(category.pages)) throw new Error('resposta de categoria inválida')
+    if (typeof category?.slug !== 'string' || typeof category.name !== 'string' || !Array.isArray(category.pages)) throw new Error('Invalid category response')
     return category
   } catch (error) { if (error.status !== 404) throw error }
   return null
@@ -395,13 +397,13 @@ export async function updateProfile(payload) {
 
 export async function getRecentActivity() {
   const data = await apiGet('/api/secure/admin/activity')
-  if (!Array.isArray(data?.activity)) throw new Error('resposta de atividade inválida')
+  if (!Array.isArray(data?.activity)) throw new Error('Invalid activity response')
   return data.activity
 }
 
 export async function getSystemStatus() {
   const data = await apiGet('/api/system/status')
-  if (!data?.status) throw new Error('resposta de sistema inválida')
+  if (!data?.status) throw new Error('Invalid system status response')
   return data.status
 }
 
@@ -411,7 +413,7 @@ export async function forceSystemAction(action) {
 
 export async function getTrash() {
   const data = await apiGet('/api/secure/admin/trash')
-  if (!Array.isArray(data?.trash?.pages) || !Array.isArray(data?.trash?.files)) throw new Error('resposta de lixeira inválida')
+  if (!Array.isArray(data?.trash?.pages) || !Array.isArray(data?.trash?.files)) throw new Error('Invalid trash response')
   return data.trash
 }
 
@@ -439,7 +441,7 @@ export async function deleteStoredFile(slug) {
 
 export async function listIpRules() {
   const data = await apiGet('/api/secure/admin/ip-rules')
-  if (!Array.isArray(data?.rules)) throw new Error('resposta de regras inválida')
+  if (!Array.isArray(data?.rules)) throw new Error('Invalid IP rule response')
   return data.rules
 }
 
@@ -489,13 +491,13 @@ export async function listTemplates(options = {}) {
   const useSecure = Boolean(options.secure)
   const path = useSecure ? '/api/secure/templates' : '/api/templates'
   const data = await apiGet(path)
-  if (!Array.isArray(data)) throw new Error('resposta de templates inválida')
+  if (!Array.isArray(data)) throw new Error('Invalid template response')
   return data
 }
 
 export async function listAdminTemplates() {
   const data = await apiGet('/api/secure/admin/templates')
-  if (!Array.isArray(data?.templates)) throw new Error('resposta de templates inválida')
+  if (!Array.isArray(data?.templates)) throw new Error('Invalid template response')
   return data.templates
 }
 
@@ -513,13 +515,13 @@ export async function deleteAdminTemplate(id) {
 
 export async function getAdminGlobalSettings() {
   const data = await apiGet('/api/secure/admin/settings', { noCache: true })
-  if (!data?.settings || typeof data.settings !== 'object') throw new Error('resposta de configurações inválida')
+  if (!data?.settings || typeof data.settings !== 'object') throw new Error('Invalid settings response')
   return data.settings
 }
 
 export async function saveAdminGlobalSettings(settings) {
   const data = await apiPost('/api/secure/admin/settings', { settings })
   clearPublicCache()
-  if (!data?.settings || typeof data.settings !== 'object') throw new Error('resposta de configurações inválida')
+  if (!data?.settings || typeof data.settings !== 'object') throw new Error('Invalid settings response')
   return data.settings
 }

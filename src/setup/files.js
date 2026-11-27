@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
 
 export const IGNORE = new Set(['.git', '.wrangler', 'node_modules', '__pycache__', '.DS_Store', '__MACOSX', '_worker.bundle'])
-// mantém os locks nativos vivos durante operações assíncronas
+// keep native locks alive during asynchronous operations
 const activeLocks = new Set()
 export const readJson = (file, fallback = {}) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return structuredClone(fallback) } }
 export function writeJson(file, value) {
@@ -21,7 +21,7 @@ export function hash(file) {
   try { let length; while ((length = fs.readSync(fd, buffer)) > 0) digest.update(buffer.subarray(0, length)); return digest.digest('hex') } finally { fs.closeSync(fd) }
 }
 export function safePath(value) {
-  if (typeof value !== 'string' || !value || /[\\:\x00-\x1f]/.test(value) || value.startsWith('/') || value.split('/').some(part => !part || part === '.' || part === '..' || part !== part.replace(/[ .]+$/, '') || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part))) throw new Error('caminho inválido')
+  if (typeof value !== 'string' || !value || /[\\:\x00-\x1f]/.test(value) || value.startsWith('/') || value.split('/').some(part => !part || part === '.' || part === '..' || part !== part.replace(/[ .]+$/, '') || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part))) throw new Error('Invalid path')
   return value
 }
 export function inside(root, file) {
@@ -30,7 +30,7 @@ export function inside(root, file) {
 }
 export function checkAncestors(file) {
   for (let current = path.resolve(file);; current = path.dirname(current)) {
-    try { if (fs.lstatSync(current).isSymbolicLink()) throw new Error('caminho simbólico na instalação') } catch (error) { if (error.code !== 'ENOENT') throw error }
+    try { if (fs.lstatSync(current).isSymbolicLink()) throw new Error('Symbolic link in the installation') } catch (error) { if (error.code !== 'ENOENT') throw error }
     if (path.dirname(current) === current) break
   }
 }
@@ -41,10 +41,10 @@ export function walk(root, excluded = new Set()) {
     for (const name of fs.readdirSync(directory).sort()) {
       if (excluded.has(name)) continue
       const file = path.join(directory, name), stat = fs.lstatSync(file)
-      if (stat.isSymbolicLink()) throw new Error('caminho simbólico na instalação')
+      if (stat.isSymbolicLink()) throw new Error('Symbolic link in the installation')
       if (stat.isDirectory()) visit(file)
       else if (stat.isFile()) files.push(file)
-      else throw new Error('tipo de arquivo não permitido')
+      else throw new Error('Unsupported file type')
     }
   }
   visit(root)
@@ -60,15 +60,15 @@ export function copyTree(source, target, excluded = new Set()) {
   }
 }
 export function removeWithin(root, target) {
-  if (!inside(root, target)) throw new Error('caminho fora do diretório permitido')
+  if (!inside(root, target)) throw new Error('Path outside the allowed directory')
   checkAncestors(target)
   fs.rmSync(target, { recursive: true, force: true })
 }
 export function decodeBase64(value, maximum) {
   const encoded = String(value).split(',').at(-1)
-  if (encoded.length > Math.ceil(maximum / 3) * 4 || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) throw new Error('conteúdo base64 inválido ou longo demais')
+  if (encoded.length > Math.ceil(maximum / 3) * 4 || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) throw new Error('Invalid or oversized Base64 content')
   const bytes = Buffer.from(encoded, 'base64')
-  if (!bytes.length || bytes.length > maximum) throw new Error('conteúdo vazio ou longo demais')
+  if (!bytes.length || bytes.length > maximum) throw new Error('Empty or oversized content')
   return bytes
 }
 export async function operationLock(root, operation) {
@@ -81,7 +81,7 @@ export async function operationLock(root, operation) {
   let acquired = false
   try {
     try { db.exec('PRAGMA busy_timeout = 0; CREATE TABLE IF NOT EXISTS operation_lock (id INTEGER PRIMARY KEY); BEGIN IMMEDIATE; INSERT OR REPLACE INTO operation_lock VALUES (1)'); acquired = true }
-    catch { throw new Error('outra operação local está em andamento') }
+    catch { throw new Error('Another local operation is in progress') }
     return await operation()
   } finally { try { if (acquired) db.exec('ROLLBACK') } finally { activeLocks.delete(db); db.close() } }
 }

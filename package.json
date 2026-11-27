@@ -1,6 +1,6 @@
 {
   "name": "wikicambada-core",
-  "version": "1.1.1-indev.1",
+  "version": "1.1.1-indev.2",
   "private": true,
   "type": "module",
   "engines": {

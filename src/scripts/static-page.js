@@ -62,7 +62,7 @@ function applyStaticLinks() {
 export async function bootStaticPage() {
   bootThemeControls()
   await loadSiteConfig()
-  await loadGlobalSettings()
+  await loadGlobalSettings().catch(() => {})
   const titlePrefix = document.querySelector('[data-static-title]')?.textContent?.trim() || document.title.split('—')[0].trim()
   document.title = `${titlePrefix} — ${SITE_CONFIG.site.name || 'WikiCambada Core'}`
   document.querySelectorAll('[data-static-origin]').forEach(element => {

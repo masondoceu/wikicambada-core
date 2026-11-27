@@ -16,7 +16,7 @@ async function request(payload = {}, header = {}) {
   return new Request('https://wiki.example.com/api/secure/pages', { headers: { 'cf-access-jwt-assertion': `${data}.${signature}` } })
 }
 
-test('Access verifica assinatura, issuer, audience, exp, nbf, iat e algoritmo', async () => {
+test('Access validates the signature, issuer, audience, exp, nbf, iat and algorithm', async () => {
   const DB = await database()
   assert.equal((await auth.readAccessUser(await request(), { ...env, DB })).canEdit, true)
   for (const payload of [{ iss: 'https://other.example.com' }, { aud: ['other'] }, { exp: undefined }, { exp: 1 }, { nbf: 9999999999 }, { iat: 9999999999 }, { email: undefined }]) assert.equal((await auth.readAccessUser(await request(payload), { ...env, DB })).authenticated, false)
@@ -27,7 +27,7 @@ test('Access verifica assinatura, issuer, audience, exp, nbf, iat e algoritmo', 
   DB.sqlite.close()
 })
 
-test('usuário desativado e falhas D1 nunca concedem edição', async () => {
+test('Disabled accounts and D1 failures never grant editing permissions', async () => {
   const DB = await database()
   const signed = await request()
   await auth.readAccessUser(signed, { ...env, DB })
@@ -42,7 +42,7 @@ test('usuário desativado e falhas D1 nunca concedem edição', async () => {
   DB.sqlite.close()
 })
 
-test('modo permissivo exige opção explícita e endereço local', async () => {
+test('Permissive mode requires an explicit flag and a local address', async () => {
   const DB = await database()
   const headers = { 'cf-access-authenticated-user-email': 'editor@example.com' }
   const remote = new Request('https://wiki.example.com/', { headers })
@@ -53,7 +53,7 @@ test('modo permissivo exige opção explícita e endereço local', async () => {
   DB.sqlite.close()
 })
 
-test('falha na promoção do perfil e bindings JWT ausentes recusam autorização', async () => {
+test('Failed profile promotion and missing JWT bindings deny authorization', async () => {
   const DB = await database()
   const signed = await request()
   await auth.readAccessUser(signed, { ...env, DB })

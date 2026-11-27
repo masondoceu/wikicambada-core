@@ -234,8 +234,25 @@ function renderReview() {
 function notice(message) { const box = $('#notice'); box.textContent = message; box.hidden = !message }
 const setupToken = document.querySelector('meta[name="setup-token"]').content
 const connection = new EventSource('/api/events?token=' + encodeURIComponent(setupToken))
-async function api(path, options = {}) { const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', 'x-setup-token': setupToken, ...options.headers } }); const data = await response.json(); if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`); return data }
-async function readFileAsData(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file) }) }
+async function api(path, options = {}) {
+  const language = locale()
+  const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', 'x-setup-token': setupToken, 'x-setup-language': language, ...options.headers } }).catch(() => {
+    throw new Error(language === 'en' ? 'Could not connect to setup.' : 'Não foi possível conectar ao setup.')
+  })
+  const data = await response.json().catch(() => {
+    throw new Error(language === 'en' ? 'Invalid setup response.' : 'Resposta inválida do setup.')
+  })
+  if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`)
+  return data
+}
+async function readFileAsData(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error(locale() === 'en' ? 'Could not read the file.' : 'Não foi possível ler o arquivo.'))
+    reader.readAsDataURL(file)
+  })
+}
 
 async function migrate(event) {
   event.preventDefault()

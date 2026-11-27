@@ -6,8 +6,8 @@ type Context = EventContext<Env, string, Record<string, never>>
 
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireRole(request, env, 'moderator')
-  if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('Administration blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const url = new URL(request.url)
   const sort = url.searchParams.get('sort') === 'recent' ? 'recent' : 'title'

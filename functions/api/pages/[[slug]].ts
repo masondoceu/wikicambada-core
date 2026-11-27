@@ -9,17 +9,17 @@ type Context = EventContext<Env, string, { slug?: string[] }>
 export async function onRequestGet(context: Context) {
   const { env, params } = context
   const slug = normalizeSlug(params.slug)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   if (!slug) {
     return listPageIndex(context)
   }
 
-  if (!(await publicPageEnabled(env, slug))) return error('página indisponível nesta instalação', 403)
+  if (!(await publicPageEnabled(env, slug))) return error('Page unavailable on this installation', 403)
 
   const page = await readPage(env, slug)
-  if (!page) return error('página não encontrada', 404)
-  if (!(await publicPageEnabled(env, page.slug))) return error('página indisponível nesta instalação', 403)
+  if (!page) return error('Page not found', 404)
+  if (!(await publicPageEnabled(env, page.slug))) return error('Page unavailable on this installation', 403)
 
   return json(page)
 }

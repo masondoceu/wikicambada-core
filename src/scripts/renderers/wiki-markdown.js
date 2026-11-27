@@ -1,6 +1,7 @@
 import { browserRenderRuntime, escapeHtml, normalizeKey, searchUrl, slugify, talkPageSlug, userPageSlug } from '../core/utils.js'
 
 export function createMarkdownRenderer(runtime) {
+  const ui = (pt, en) => runtime.language() === 'en' ? en : pt
   const sameOrigin = url => url.origin === (runtime.origin || new URL(runtime.href).origin)
   const inlineCache = runtime.origin ? new Map() : null
   const tokenCache = runtime.origin ? new Map() : null
@@ -355,7 +356,7 @@ export function createMarkdownRenderer(runtime) {
     const renderedSource = replaceTemplatePlaceholders(source, data)
     const expansion = options.expansion
     if (++expansion.count > 1024 || (expansion.length += renderedSource.length) > 1024 * 1024) {
-      return `<aside class="template-box">${escapeHtml(data.name)}: limite de transclusão atingido</aside>`
+      return `<aside class="template-box">${escapeHtml(data.name)}: ${ui('limite de transclusão atingido', 'transclusion limit reached')}</aside>`
     }
     if (/^\s*:::/m.test(renderedSource) || /^\s*\{\{/m.test(renderedSource)) {
       return markdownToHtml(renderedSource, { ...options, templateDepth: (options.templateDepth || 0) + 1 })
@@ -379,7 +380,7 @@ export function createMarkdownRenderer(runtime) {
     const name = normalizeKey(data.name)
 
     if ((options.templateDepth || 0) > 8) {
-      return `<aside class="template-box">${escapeHtml(data.name)}: limite de transclusão atingido</aside>`
+      return `<aside class="template-box">${escapeHtml(data.name)}: ${ui('limite de transclusão atingido', 'transclusion limit reached')}</aside>`
     }
 
     if (name === 'infobox' || name === 'infocaixa') {
@@ -436,7 +437,7 @@ export function createMarkdownRenderer(runtime) {
       `
     }
 
-    return `<aside class="template-box">Template não reconhecido: <code>${escapeHtml(data.name)}</code>${data.args.length ? ` — ${inlineMarkdown(data.args.join(' · '))}` : ''}</aside>`
+    return `<aside class="template-box">${ui('Template não reconhecido', 'Unrecognized template')}: <code>${escapeHtml(data.name)}</code>${data.args.length ? ` — ${inlineMarkdown(data.args.join(' · '))}` : ''}</aside>`
   }
 
 
@@ -520,7 +521,7 @@ export function createMarkdownRenderer(runtime) {
     const mediaType = mediaKindFromSource(src, type)
     const embed = mediaType === 'video' ? youtubeEmbedUrl(cleanSrc) : ''
     if (embed) {
-      return `<iframe class="wiki-media-iframe" src="${escapeHtml(embed)}" title="${escapeHtml(title || alt || 'vídeo incorporado')}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen ${attrs}></iframe>`
+      return `<iframe class="wiki-media-iframe" src="${escapeHtml(embed)}" title="${escapeHtml(title || alt || ui('vídeo incorporado', 'embedded video'))}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen ${attrs}></iframe>`
     }
     const safeSrc = safeMediaSource(cleanSrc)
     if (!safeSrc) return ''
@@ -698,7 +699,7 @@ export function createMarkdownRenderer(runtime) {
 
   function renderInfoboxBlock(argument, body, options = {}) {
     const data = extractComponentData(body)
-    const title = getMeta(data, ['title', 'titulo', 'título'], argument || 'Infocaixa')
+    const title = getMeta(data, ['title', 'titulo', 'título'], argument || ui('Infocaixa', 'Infobox'))
     const subtitle = getMeta(data, ['subtitle', 'subtitulo', 'subtítulo'])
     const reservedNames = ['title', 'titulo', 'título', 'subtitle', 'subtitulo', 'subtítulo', 'class', 'classe']
     const reserved = new Set(reservedNames.map(normalizeKey))
@@ -716,7 +717,7 @@ export function createMarkdownRenderer(runtime) {
       .join('')
 
     return `
-      <aside class="infobox infobox-inline" aria-label="Infocaixa">
+      <aside class="infobox infobox-inline" aria-label="${ui('Infocaixa', 'Infobox')}">
         <div class="infobox-title">${escapeHtml(title)}</div>
         ${subtitle ? `<div class="infobox-subtitle">${escapeHtml(subtitle)}</div>` : ''}
         ${renderInfoboxImages(images, title)}
@@ -753,7 +754,7 @@ export function createMarkdownRenderer(runtime) {
 
   function renderPanelBlock(argument, body, options = {}) {
     const data = extractComponentData(body)
-    const title = getMeta(data, ['title', 'titulo', 'título'], argument || 'Seção')
+    const title = getMeta(data, ['title', 'titulo', 'título'], argument || ui('Seção', 'Section'))
 
     return `
       <section class="wiki-panel">
@@ -789,7 +790,7 @@ export function createMarkdownRenderer(runtime) {
       <section class="wiki-card-grid${className}">
         ${cards.map(card => {
           const data = extractComponentData(card)
-          const title = getMeta(data, ['title', 'titulo', 'título'], 'Seção')
+          const title = getMeta(data, ['title', 'titulo', 'título'], ui('Seção', 'Section'))
           return `
             <article class="portal-card wiki-card">
               <h2>${escapeHtml(title)}</h2>
@@ -813,7 +814,7 @@ export function createMarkdownRenderer(runtime) {
       })
       .join('')
 
-    return `<nav class="topic-strip" aria-label="Tópicos">${links}</nav>`
+    return `<nav class="topic-strip" aria-label="${ui('Tópicos', 'Topics')}">${links}</nav>`
   }
 
 
@@ -986,7 +987,7 @@ export function createMarkdownRenderer(runtime) {
     const attrs = mediaAttributes({ src, type: mediaType, title: title || alt, caption: displayCaption, details: detailsUrl })
     const media = mediaElementHtml({ src, type: mediaType, attrs, alt, title: title || alt })
     const detailLink = detailsUrl
-      ? `<a class="wiki-thumb-detail" href="${escapeHtml(detailsUrl)}" data-link="route" aria-label="Abrir página do arquivo" title="Abrir página do arquivo">⧉</a>`
+      ? `<a class="wiki-thumb-detail" href="${escapeHtml(detailsUrl)}" data-link="route" aria-label="${ui('Abrir página do arquivo', 'Open file page')}" title="${ui('Abrir página do arquivo', 'Open file page')}">⧉</a>`
       : ''
 
     return `
@@ -1023,7 +1024,7 @@ export function createMarkdownRenderer(runtime) {
         const attrs = mediaAttributes({ src, type: mediaType, title: caption, caption, details: detailUrl })
         const media = mediaElementHtml({ src, type: mediaType, attrs, alt: caption, title: caption })
         const detailLink = detailUrl
-          ? `<a class="wiki-gallery-detail" href="${escapeHtml(detailUrl)}" data-link="route" aria-label="Abrir página do arquivo" title="Abrir página do arquivo">⧉</a>`
+          ? `<a class="wiki-gallery-detail" href="${escapeHtml(detailUrl)}" data-link="route" aria-label="${ui('Abrir página do arquivo', 'Open file page')}" title="${ui('Abrir página do arquivo', 'Open file page')}">⧉</a>`
           : ''
 
         return `
@@ -1036,7 +1037,7 @@ export function createMarkdownRenderer(runtime) {
       .join('')
 
     return `
-      <section class="wiki-gallery" aria-label="Galeria de mídia">
+      <section class="wiki-gallery" aria-label="${ui('Galeria de mídia', 'Media gallery')}">
         ${title ? `<h2>${escapeHtml(title)}</h2>` : ''}
         <div class="wiki-gallery-grid">${items}</div>
       </section>
@@ -1262,7 +1263,7 @@ export function createMarkdownRenderer(runtime) {
         flushList()
         const level = heading[1].length
         const id = headingIdFromText(heading[2], headingCounts)
-        html.push(`<h${level} id="${escapeHtml(id)}"><a class="section-anchor" href="#${escapeHtml(id)}" aria-label="Link para esta seção">§</a>${inlineMarkdown(heading[2])}</h${level}>`)
+        html.push(`<h${level} id="${escapeHtml(id)}"><a class="section-anchor" href="#${escapeHtml(id)}" aria-label="${ui('Link para esta seção', 'Link to this section')}">§</a>${inlineMarkdown(heading[2])}</h${level}>`)
         continue
       }
 

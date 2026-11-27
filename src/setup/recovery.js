@@ -24,19 +24,19 @@ export async function* jsonLines(file) { const stream = fs.createReadStream(file
 export function checkDatabase(file, objects) {
   const db = new DatabaseSync(file, { readOnly: true })
   try {
-    if (db.prepare('PRAGMA integrity_check').all().some(row => row.integrity_check !== 'ok') || db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('o banco não passou na verificação de integridade')
-    if (schemaHash(db) !== expectedSchema()) throw new Error('schema incompatível com esta versão do Core')
-    if (db.prepare('SELECT pages.id FROM pages LEFT JOIN revisions ON revisions.id = pages.current_revision_id WHERE pages.current_revision_id IS NOT NULL AND (revisions.id IS NULL OR revisions.page_id != pages.id) LIMIT 1').get()) throw new Error('referência de revisão inválida')
+    if (db.prepare('PRAGMA integrity_check').all().some(row => row.integrity_check !== 'ok') || db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Database integrity check failed')
+    if (schemaHash(db) !== expectedSchema()) throw new Error('The schema is incompatible with this Core version')
+    if (db.prepare('SELECT pages.id FROM pages LEFT JOIN revisions ON revisions.id = pages.current_revision_id WHERE pages.current_revision_id IS NOT NULL AND (revisions.id IS NULL OR revisions.page_id != pages.id) LIMIT 1').get()) throw new Error('Invalid revision reference')
     for (const row of db.prepare('SELECT r2_key, size_bytes, sha256 FROM uploads').iterate()) {
       const object = path.join(objects, safePath(row.r2_key)); checkAncestors(object)
-      if (!fs.existsSync(object) || !fs.statSync(object).isFile() || fs.statSync(object).size !== row.size_bytes) throw new Error('objeto de upload ausente ou inválido: ' + row.r2_key)
-      if (row.sha256 && hash(object) !== row.sha256) throw new Error('hash de upload diferente: ' + row.r2_key)
+      if (!fs.existsSync(object) || !fs.statSync(object).isFile() || fs.statSync(object).size !== row.size_bytes) throw new Error(`Missing or invalid upload object: ${row.r2_key}`)
+      if (row.sha256 && hash(object) !== row.sha256) throw new Error(`Upload hash mismatch: ${row.r2_key}`)
     }
     return Object.fromEntries(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map(({ name }) => [name, db.prepare(`SELECT COUNT(*) AS total FROM ${quote(name)}`).get().total]))
   } finally { db.close() }
 }
 export function snapshotConfiguration(project, destination) {
-  if (fs.existsSync(destination)) throw new Error('o destino da configuração já existe')
+  if (fs.existsSync(destination)) throw new Error('The configuration destination already exists')
   fs.mkdirSync(destination, { recursive: true })
   for (const name of ['src/config', 'src/media', 'src/data/wiki-icons.json', '.wikicambada/state.json', '.dev.vars', 'wrangler.toml', 'package.json', 'package-lock.json', ...installationAssets(project)]) {
     const source = project.file(name), target = path.join(destination, name)
@@ -48,7 +48,7 @@ export function snapshotConfiguration(project, destination) {
 }
 export async function backupLocal(database, objects, destination, configuration, metadata = {}) {
   database = path.resolve(database); objects = path.resolve(objects); destination = path.resolve(destination)
-  if (fs.existsSync(destination) || !fs.statSync(database).isFile() || !fs.statSync(objects).isDirectory() || inside(objects, destination) || destination === objects || configuration && (inside(configuration, destination) || configuration === destination)) throw new Error('origem ou destino de backup inválido')
+  if (fs.existsSync(destination) || !fs.statSync(database).isFile() || !fs.statSync(objects).isDirectory() || inside(objects, destination) || destination === objects || configuration && (inside(configuration, destination) || configuration === destination)) throw new Error('Invalid backup source or destination')
   fs.mkdirSync(path.dirname(destination), { recursive: true })
   return operationLock(path.dirname(destination), async () => {
     const directory = fs.mkdtempSync(path.join(path.dirname(destination), '.wiki-backup-')), stage = path.join(directory, 'archive')
@@ -65,7 +65,7 @@ export async function backupLocal(database, objects, destination, configuration,
           const key = safePath(path.relative(objects, file).replaceAll(path.sep, '/')), output = path.join(stage, 'objects', key)
           fs.mkdirSync(path.dirname(output), { recursive: true }); fs.copyFileSync(file, output)
           const sha256 = hash(output)
-          if (hash(file) !== sha256) throw new Error('objeto modificado durante o backup')
+          if (hash(file) !== sha256) throw new Error('An object changed during backup')
           fs.writeSync(index, JSON.stringify({ key, size: fs.statSync(output).size, sha256, ...Object.fromEntries(Object.entries(metadata[key] || {}).filter(([key]) => ['httpMetadata', 'customMetadata'].includes(key))) }) + '\n')
         }
       } finally { fs.closeSync(index) }
@@ -82,26 +82,26 @@ export async function backupLocal(database, objects, destination, configuration,
 export async function validateArchive(archive) {
   archive = path.resolve(archive); checkAncestors(archive)
   const manifest = readJson(path.join(archive, 'manifest.json')), files = manifest.files
-  if (manifest.format !== 'WikiCambada Core recovery' || manifest.formatVersion !== 1 || manifest.schemaHash !== expectedSchema() || manifest.databaseSchema !== 17) throw new Error('formato ou schema do backup incompatível')
-  if (!files || !Object.hasOwn(files, 'database.sqlite') || !Object.hasOwn(files, 'objects.jsonl') || new Set(Object.keys(files).map(name => name.toLowerCase())).size !== Object.keys(files).length) throw new Error('manifesto de recuperação incompleto ou em conflito')
+  if (manifest.format !== 'WikiCambada Core recovery' || manifest.formatVersion !== 1 || manifest.schemaHash !== expectedSchema() || manifest.databaseSchema !== 17) throw new Error('Incompatible backup format or schema')
+  if (!files || !Object.hasOwn(files, 'database.sqlite') || !Object.hasOwn(files, 'objects.jsonl') || new Set(Object.keys(files).map(name => name.toLowerCase())).size !== Object.keys(files).length) throw new Error('Incomplete or conflicting recovery manifest')
   const actual = walk(archive).map(file => path.relative(archive, file).replaceAll(path.sep, '/')).filter(name => name !== 'manifest.json')
-  if (actual.length !== Object.keys(files).length || actual.some(name => !Object.hasOwn(files, name))) throw new Error('arquivos ausentes ou não registrados no backup')
-  for (const [name, record] of Object.entries(files)) { const file = path.join(archive, safePath(name)); if (fs.statSync(file).size !== record.size || hash(file) !== record.sha256) throw new Error('arquivo corrompido: ' + name) }
+  if (actual.length !== Object.keys(files).length || actual.some(name => !Object.hasOwn(files, name))) throw new Error('Missing or unlisted files in the backup')
+  for (const [name, record] of Object.entries(files)) { const file = path.join(archive, safePath(name)); if (fs.statSync(file).size !== record.size || hash(file) !== record.sha256) throw new Error(`Corrupt file: ${name}`) }
   const indexed = new Set()
   for await (const item of jsonLines(path.join(archive, 'objects.jsonl'))) {
     safePath(item.key)
     const registered = files['objects/' + item.key]
-    if (indexed.has(item.key) || !registered || registered.size !== item.size || registered.sha256 !== item.sha256) throw new Error('inventário de objetos inconsistente')
+    if (indexed.has(item.key) || !registered || registered.size !== item.size || registered.sha256 !== item.sha256) throw new Error('Inconsistent object inventory')
     indexed.add(item.key)
   }
-  if (indexed.size !== Object.keys(files).filter(name => name.startsWith('objects/')).length) throw new Error('inventário de objetos incompleto')
+  if (indexed.size !== Object.keys(files).filter(name => name.startsWith('objects/')).length) throw new Error('Incomplete object inventory')
   const tables = checkDatabase(path.join(archive, 'database.sqlite'), path.join(archive, 'objects'))
-  if (Object.keys(tables).length !== Object.keys(manifest.tables || {}).length || Object.entries(tables).some(([key, value]) => manifest.tables[key] !== value)) throw new Error('contagens do banco inconsistentes')
+  if (Object.keys(tables).length !== Object.keys(manifest.tables || {}).length || Object.entries(tables).some(([key, value]) => manifest.tables[key] !== value)) throw new Error('Inconsistent database counts')
   return manifest
 }
 export async function restoreLocal(archive, destination) {
   archive = path.resolve(archive); destination = path.resolve(destination)
-  if (fs.existsSync(destination) || destination === archive || inside(archive, destination)) throw new Error('a restauração exige um destino novo e vazio')
+  if (fs.existsSync(destination) || destination === archive || inside(archive, destination)) throw new Error('Restore requires a new, empty destination')
   const manifest = await validateArchive(archive)
   fs.mkdirSync(path.dirname(destination), { recursive: true })
   return operationLock(path.dirname(destination), async () => {

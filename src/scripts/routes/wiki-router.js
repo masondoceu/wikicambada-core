@@ -1,6 +1,6 @@
 import { exactSearchResult, isGeneratedSpecialSlug, searchTitleForMatch, specialFeature, specialPageInfo, specialPageSlugs } from './wiki-special.js'
 import { DEFAULT_RANDOM_SLUGS, HOME_SLUG, SLOGAN, SITE_CONFIG, SITE_NAME, featureEnabled, loadGlobalSettings } from '../core/config.js'
-import { interfaceLanguage, interfaceLocale, t } from '../core/i18n.js'
+import { diagnosticDetail, interfaceLanguage, interfaceLocale, searchMatchLabel, t } from '../core/i18n.js'
 import { articleSlugFromTalk, escapeHtml, normalizeKey, pageUrl, parseRoute, searchUrl, slugify, titleFromSlug } from '../core/utils.js'
 import { adminPageAction, clearPublicCache, clearRecentActivity, createIpRule, deleteAdminTemplate, deleteAdminUser, deleteAdvancedAlias, deleteAdvancedRedirect, deleteIpRule, deletePage, deleteStoredFile, forceSystemAction, getAdminGlobalSettings, getAdminUsers, getAdvancedRedirects, getCategory, getCurrentUser, getFile, getMaintenanceReport, getPage, getPageFresh, getPageList, lookupPages, getRandomPage, getRecentActivity, getRevision, getSearchPage, getStorageOverview, getSystemStatus, getTrash, importSeedBackup, listAdminPages, listAdminTemplates, listCategories, listFiles, listIpRules, listPages, listProposals, listRevisions, listTemplates, moderateProposal, restoreRevision, saveAdvancedAlias, saveAdvancedRedirect, saveAdminGlobalSettings, savePage, saveAdminTemplate, searchPages, submitEditProposal, trashAction, updateAdminUser, updateProfile, updateStoredFile, uploadImage } from '../services/wiki-api.js'
 import { markdownToHtml } from '../renderers/wiki-markdown.js'
@@ -550,7 +550,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         navigate(result?.file?.pageUrl || pageUrl(`arquivo/${result?.file?.fileSlug || slug}`))
       } catch (error) {
         setEditorSaving(form, false)
-        if (note) note.textContent = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${error.message || ''}`
+        if (note) note.textContent = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${diagnosticDetail(error) || ''}`
       }
     })
   }
@@ -607,7 +607,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
   async function renderHistory(slug, serial, offset = 0) {
     updateChrome(slug, 'history')
     if (String(slug || '').startsWith('arquivo/')) {
-      setDocumentTitle({ title: 'Namespace de arquivo' })
+      setDocumentTitle({ title: ui('Namespace de arquivo', 'File namespace') })
       commitHtml(serial, fileNamespaceBlockedHtml(slug, currentUser))
       return
     }
@@ -1832,7 +1832,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         : ui("Nenhum arquivo encontrado para essa busca.", "No files found for this search.")
       return files
     } catch (error) {
-      grid.innerHTML = `<p class="upload-note">${ui("Não foi possível carregar a mídia. ", "Could not load media. ")}${escapeHtml(error.message || '')}</p>`
+      grid.innerHTML = `<p class="upload-note">${ui("Não foi possível carregar a mídia. ", "Could not load media. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`
       if (note) note.innerHTML = ui("A listagem de mídia exige acesso de editor.", "The media library requires editor access.")
       return []
     }
@@ -1900,7 +1900,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       filterTemplateCards(form)
       return templates
     } catch (error) {
-      grid.innerHTML = `<p class="upload-note">${ui("Não foi possível carregar os templates. ", "Could not load templates. ")}${escapeHtml(error.message || '')}</p>`
+      grid.innerHTML = `<p class="upload-note">${ui("Não foi possível carregar os templates. ", "Could not load templates. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`
       if (note) note.innerHTML = ui("A API de templates não respondeu corretamente.", "The templates API returned an invalid response.")
       return []
     }
@@ -2124,7 +2124,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
             : ui("Arquivo enviado e inserido no artigo.", "File uploaded and inserted into the article.")
         }
       } catch (error) {
-        const message = error?.message || ui("erro desconhecido", "unknown error")
+        const message = diagnosticDetail(error) || ui("erro desconhecido", "unknown error")
         if (noteTarget) noteTarget.innerHTML = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${escapeHtml(message)}`
         note.innerHTML = `${ui("Não foi possível enviar o arquivo. ", "Could not upload the file. ")}${escapeHtml(message)}`
       } finally {
@@ -2184,7 +2184,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       try {
         await renderEditorPreview(page, form)
       } catch (error) {
-        note.innerHTML = `${ui("Não foi possível gerar a pré-visualização. ", "Could not generate the preview. ")}${escapeHtml(error.message || '')}`
+        note.innerHTML = `${ui("Não foi possível gerar a pré-visualização. ", "Could not generate the preview. ")}${escapeHtml(diagnosticDetail(error) || '')}`
       } finally {
         previewButton.disabled = false
       }
@@ -2238,7 +2238,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         await navigate(pageUrl(HOME_SLUG))
       } catch (error) {
         deleteButton.disabled = false
-        note.innerHTML = `${ui("Não foi possível deletar a página. ", "Could not delete the page. ")}${escapeHtml(error.message || '')}`
+        note.innerHTML = `${ui("Não foi possível deletar a página. ", "Could not delete the page. ")}${escapeHtml(diagnosticDetail(error) || '')}`
       }
     })
   }
@@ -2302,7 +2302,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         await navigate(pageUrl(nextSlug))
       } catch (error) {
         if (error.status === 409) await resolveEditConflictBeforeSave(page, form, rawPayload, note)
-        note.innerHTML = `${ui("Não foi possível salvar a revisão. ", "Could not save the revision. ")}${escapeHtml(error.message || ui("A API de escrita ainda não está disponível.", "The editing API is unavailable."))}`
+        note.innerHTML = `${ui("Não foi possível salvar a revisão. ", "Could not save the revision. ")}${escapeHtml(diagnosticDetail(error) || ui("A API de escrita ainda não está disponível.", "The editing API is unavailable."))}`
       } finally {
         if (!saveProgressFinished && isCurrentRoute(serial)) setEditorSaving(form, false)
       }
@@ -2352,7 +2352,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         saveProgressFinished = true
         commitHtml(serial, proposalSubmittedHtml({ ...page, slug: nextSlug, title: payload.title }, result))
       } catch (error) {
-        note.innerHTML = `${ui("Não foi possível enviar a proposta. ", "Could not submit the proposal. ")}${escapeHtml(error.message || ui("A API de propostas ainda não está disponível.", "The proposals API is unavailable."))}`
+        note.innerHTML = `${ui("Não foi possível enviar a proposta. ", "Could not submit the proposal. ")}${escapeHtml(diagnosticDetail(error) || ui("A API de propostas ainda não está disponível.", "The proposals API is unavailable."))}`
       } finally {
         if (!saveProgressFinished && isCurrentRoute(serial)) setEditorSaving(form, false)
       }
@@ -2395,7 +2395,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
 
     const dependencyDisabled = (info.key === 'categories' && !featureEnabled('categories')) || (info.key === 'randomPage' && !featureEnabled('randomPage'))
     if ((feature && !featureEnabled(feature)) || dependencyDisabled) {
-      setDocumentTitle({ title: 'Recurso desativado' })
+      setDocumentTitle({ title: ui('Recurso desativado', 'Feature disabled') })
       commitHtml(serial, featureDisabledHtml(ui("Página especial desativada", "Special page disabled")))
       return
     }
@@ -2447,7 +2447,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminDashboardHtml({ pages: pagesData?.pages || [], maintenance, user: currentUser }))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a administração. ", "Could not load administration. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a administração. ", "Could not load administration. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2467,7 +2467,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       app.querySelector('[data-pages-prev]')?.addEventListener('click', () => renderAdminPages(serial, Math.max(0, offset - 100)))
       app.querySelector('[data-pages-next]')?.addEventListener('click', () => renderAdminPages(serial, pagesData.nextOffset))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as páginas administrativas. ", "Could not load administrative pages. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as páginas administrativas. ", "Could not load administrative pages. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2485,7 +2485,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminMaintenanceHtml(maintenance))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a manutenção. ", "Could not load maintenance. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a manutenção. ", "Could not load maintenance. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2515,7 +2515,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminRedirectsHtml(data || {}))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar aliases e redirecionamentos. ", "Could not load aliases and redirects. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar aliases e redirecionamentos. ", "Could not load aliases and redirects. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2537,7 +2537,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       app.querySelector('[data-objects-prev]')?.addEventListener('click', () => renderAdminStorage(query, serial, offset, cursors.at(-1), cursors.slice(0, -1)))
       app.querySelector('[data-objects-next]')?.addEventListener('click', () => renderAdminStorage(query, serial, offset, data.r2NextCursor, [...cursors, cursor]))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar o armazenamento. ", "Could not load storage. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar o armazenamento. ", "Could not load storage. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2555,7 +2555,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminIpHtml(rules))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as regras de IP. ", "Could not load IP rules. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as regras de IP. ", "Could not load IP rules. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2573,7 +2573,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminUsersHtml({ users: data?.users || [], currentUser }))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar ", "Could not load ")}${ui("usuários", "users")}. ${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar ", "Could not load ")}${ui("usuários", "users")}. ${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2591,7 +2591,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminActivityHtml(activity))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar atividade. ", "Could not load activity. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar atividade. ", "Could not load activity. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2609,7 +2609,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminTrashHtml(trash))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a lixeira. ", "Could not load trash. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar a lixeira. ", "Could not load trash. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2627,7 +2627,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       commitHtml(serial, adminSystemHtml(status || {}))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar o sistema. ", "Could not load system status. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar o sistema. ", "Could not load system status. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2646,7 +2646,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       commitHtml(serial, adminSettingsHtml(settings || {}))
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as configurações globais. ", "Could not load global settings. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as configurações globais. ", "Could not load global settings. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2664,7 +2664,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminTemplatesHtml(templates))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar templates. ", "Could not load templates. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar templates. ", "Could not load templates. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2682,7 +2682,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
       if (!isCurrentRoute(serial)) return
       if (commitHtml(serial, adminProposalsHtml(data, selectedId))) enhanceAdminDataTables()
     } catch (error) {
-      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as propostas. ", "Could not load proposals. ")}${escapeHtml(error.message || '')}</p>`)
+      commitHtml(serial, `<p class="empty-state">${ui("Não foi possível carregar as propostas. ", "Could not load proposals. ")}${escapeHtml(diagnosticDetail(error) || '')}</p>`)
     }
   }
 
@@ -2907,14 +2907,16 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
     box.innerHTML = `
       ${results.length ? results.slice(0, 8).map(page => {
         const title = searchTitleForMatch(page)
-        const subtitle = String(page.subtitle || page.matchType || page.matchedTitle || page.matchedSlug || page.slug || '').trim()
+        const match = searchMatchLabel(page.matchType)
+        const subtitle = String(page.subtitle || match || page.matchedTitle || page.matchedSlug || page.slug || '').trim()
+        const label = match || ui('resultado', 'result')
         const icon = String(title || page.slug || '?').trim().charAt(0).toUpperCase() || '?'
         return `
           <button class="search-suggestion-item" type="button" data-search-suggestion-slug="${escapeHtml(page.slug)}" data-search-suggestion-fragment="${escapeHtml(page.targetFragment || '')}">
             <span class="search-suggestion-icon">${escapeHtml(icon)}</span>
             <span class="search-suggestion-main">
               <strong>${escapeHtml(title || page.slug || ui("Página sem título", "Untitled page"))}</strong>
-              <small>${escapeHtml(page.exact ? `${page.matchType || 'resultado'} exato` : subtitle)}</small>
+              <small>${escapeHtml(page.exact ? ui(`${label} exato`, `exact match by ${label}`) : subtitle)}</small>
             </span>
           </button>
         `
@@ -3033,7 +3035,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           navigate(pageUrl(slug))
         } catch (error) {
           restoreTarget.disabled = false
-          window.alert(`${ui("Não foi possível restaurar a revisão. ", "Could not restore the revision. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível restaurar a revisão. ", "Could not restore the revision. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3050,7 +3052,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
           advancedRedirectDelete.disabled = false
-          window.alert(`${ui("Não foi possível remover o redirecionamento. ", "Could not remove the redirect. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover o redirecionamento. ", "Could not remove the redirect. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3066,7 +3068,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
           advancedAliasDelete.disabled = false
-          window.alert(`${ui("Não foi possível remover o alias. ", "Could not remove the alias. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover o alias. ", "Could not remove the alias. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3101,7 +3103,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminPages(++routeSerial)
         } catch (error) {
           adminAction.disabled = false
-          window.alert(`${ui("Ação administrativa falhou. ", "Administrative operation failed. ")}${error.message || ''}`)
+          window.alert(`${ui("Ação administrativa falhou. ", "Administrative operation failed. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3122,7 +3124,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminStorage(currentState().query, ++routeSerial)
         } catch (error) {
           storageFileEdit.disabled = false
-          window.alert(`${ui("Não foi possível atualizar o arquivo. ", "Could not update the file. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível atualizar o arquivo. ", "Could not update the file. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3140,7 +3142,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminStorage(currentState().query, ++routeSerial)
         } catch (error) {
           storageFileDelete.disabled = false
-          window.alert(`${ui("Não foi possível deletar o arquivo. ", "Could not delete the file. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível deletar o arquivo. ", "Could not delete the file. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3161,7 +3163,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminProposals(currentState().query, ++routeSerial)
         } catch (error) {
           quickIp.disabled = false
-          window.alert(`${ui("Não foi possível criar a regra de IP. ", "Could not create the IP rule. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível criar a regra de IP. ", "Could not create the IP rule. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3179,7 +3181,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminIp(++routeSerial)
         } catch (error) {
           ipDelete.disabled = false
-          window.alert(`${ui("Não foi possível remover a regra. ", "Could not remove the rule. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover a regra. ", "Could not remove the rule. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3195,7 +3197,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminProposals()
         } catch (error) {
           proposalAction.disabled = false
-          window.alert(`${ui("Não foi possível revisar a proposta. ", "Could not review the proposal. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível revisar a proposta. ", "Could not review the proposal. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3225,7 +3227,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminUsers(++routeSerial)
         } catch (error) {
           userDelete.disabled = false
-          window.alert(`${ui("Não foi possível remover usuário. ", "Could not remove user. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível remover usuário. ", "Could not remove user. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3244,7 +3246,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminTrash(++routeSerial)
         } catch (error) {
           trashButton.disabled = false
-          window.alert(`${ui("Ação da lixeira falhou. ", "Trash operation failed. ")}${error.message || ''}`)
+          window.alert(`${ui("Ação da lixeira falhou. ", "Trash operation failed. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3258,7 +3260,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminTrash(++routeSerial)
         } catch (error) {
           purgeExpired.disabled = false
-          window.alert(`${ui("Não foi possível apagar expirados. ", "Could not purge expired items. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível apagar expirados. ", "Could not purge expired items. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3277,7 +3279,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminSystem(++routeSerial)
         } catch (error) {
           systemAction.disabled = false
-          window.alert(`${ui("Ação de sistema falhou. ", "System operation failed. ")}${error.message || ''}`)
+          window.alert(`${ui("Ação de sistema falhou. ", "System operation failed. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3294,7 +3296,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminActivity(++routeSerial)
         } catch (error) {
           clearActivity.disabled = false
-          window.alert(`${ui("Não foi possível limpar a atividade. ", "Could not clear activity. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível limpar a atividade. ", "Could not clear activity. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3360,7 +3362,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminTemplates(++routeSerial)
         } catch (error) {
           templateToggle.disabled = false
-          window.alert(`${ui("Não foi possível atualizar o template. ", "Could not update the template. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível atualizar o template. ", "Could not update the template. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3377,7 +3379,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await renderAdminTemplates(++routeSerial)
         } catch (error) {
           templateDelete.disabled = false
-          window.alert(`${ui("Não foi possível deletar o template. ", "Could not delete the template. ")}${error.message || ''}`)
+          window.alert(`${ui("Não foi possível deletar o template. ", "Could not delete the template. ")}${diagnosticDetail(error) || ''}`)
         }
         return
       }
@@ -3493,7 +3495,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           await loadGlobalSettings()
           if (note) note.textContent = ui("Configurações globais salvas.", "Global settings saved.")
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar. ", "Could not save. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar. ", "Could not save. ")}${diagnosticDetail(error) || ''}`
         } finally {
           if (button) button.disabled = false
         }
@@ -3527,7 +3529,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminTemplates(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar o template. ", "Could not save the template. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o template. ", "Could not save the template. ")}${diagnosticDetail(error) || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3549,7 +3551,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar o redirecionamento. ", "Could not save the redirect. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o redirecionamento. ", "Could not save the redirect. ")}${diagnosticDetail(error) || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3570,7 +3572,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminRedirects(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar o alias. ", "Could not save the alias. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o alias. ", "Could not save the alias. ")}${diagnosticDetail(error) || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3605,7 +3607,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminIp(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar a regra. ", "Could not save the rule. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar a regra. ", "Could not save the rule. ")}${diagnosticDetail(error) || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3623,7 +3625,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           currentUser = await getCurrentUser(window.location.pathname + window.location.search)
           await renderAdminUsers(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar o perfil. ", "Could not save the profile. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar o perfil. ", "Could not save the profile. ")}${diagnosticDetail(error) || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3645,7 +3647,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
           })
           await renderAdminUsers(++routeSerial)
         } catch (error) {
-          if (note) note.textContent = `${ui("Não foi possível salvar usuário. ", "Could not save user. ")}${error.message || ''}`
+          if (note) note.textContent = `${ui("Não foi possível salvar usuário. ", "Could not save user. ")}${diagnosticDetail(error) || ''}`
           if (button) button.disabled = false
         }
         return
@@ -3680,7 +3682,7 @@ export function createWikiRouter({ app, searchForm, searchInput }) {
         const result = await importSeedBackup(payload)
         if (note) note.textContent = `${ui("Importação concluída: ", "Import completed: ")}${result.imported?.length || 0}${ui(" página(s), ", " page(s), ")}${result.failed?.length || 0}${ui(' falha(s).', ' failure(s).')}`
       } catch (error) {
-        if (note) note.textContent = `${ui("Não foi possível importar. ", "Could not import. ")}${error.message || ''}`
+        if (note) note.textContent = `${ui("Não foi possível importar. ", "Could not import. ")}${diagnosticDetail(error) || ''}`
       } finally {
         if (button) button.disabled = false
       }

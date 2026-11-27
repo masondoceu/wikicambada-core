@@ -46,7 +46,7 @@ function request(method, token, body, params = {}, headers = {}) {
 }
 const post = async (env, token, action, fields = {}) => (await service.recoveryPost(request('POST', token, { action, ...fields }), env)).json()
 
-test('backup paginado bloqueia gravações e restaura todo o estado com mídia e metadados', async () => {
+test('Paginated backup blocks writes and restores state, media and metadata', async () => {
   const source = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   const target = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   try {
@@ -93,7 +93,7 @@ test('backup paginado bloqueia gravações e restaura todo o estado com mídia e
   } finally { source.DB.sqlite.close(); target.DB.sqlite.close() }
 })
 
-test('restauração incompleta permanece fechada e pode ser abortada', async () => {
+test('An incomplete restore keeps the wiki closed and can be aborted', async () => {
   const env = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   try {
     const status = await (await service.recoveryGet(request('GET'), env)).json()
@@ -106,7 +106,7 @@ test('restauração incompleta permanece fechada e pode ser abortada', async () 
   } finally { env.DB.sqlite.close() }
 })
 
-test('backup não omite silenciosamente tabelas de um schema desconhecido', async () => {
+test('Backup rejects schemas with unrecognized tables', async () => {
   const env = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   try {
     env.DB.sqlite.exec('CREATE TABLE custom_data (id TEXT)')
@@ -115,7 +115,7 @@ test('backup não omite silenciosamente tabelas de um schema desconhecido', asyn
   } finally { env.DB.sqlite.close() }
 })
 
-test('cliente Node transfere backup e retoma restauração interrompida pela API HTTP', async () => {
+test('The Node client transfers a backup and resumes an interrupted restore over HTTP', async () => {
   const source = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   const target = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   const directory = await mkdtemp(join(tmpdir(), 'wiki-recovery-http-'))
@@ -172,7 +172,7 @@ console.log('round trip complete with resume');`
   }
 })
 
-test('destino com configurações persistentes recusa restauração antes de alterar dados', async () => {
+test('Restore rejects a destination with persisted settings before changing data', async () => {
   const env = { ...access, DB: await database(), WIKI_BUCKET: bucket() }
   try {
     const status = await (await service.recoveryGet(request('GET'), env)).json()

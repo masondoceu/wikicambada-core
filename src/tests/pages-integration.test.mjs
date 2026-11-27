@@ -9,7 +9,7 @@ import { migrationStatements } from './helpers.mjs'
 import * as client from '../scripts/services/wiki-api.js'
 import { localProxy } from '../scripts/dev.mjs'
 
-test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibilidade', async () => {
+test('Compiled Functions integrate routing, Access, conflicts, media and feature availability', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'wiki-pages-integration-'))
   let mf
   let target
@@ -33,7 +33,7 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
       serviceBindings: { ASSETS: async request => {
         const url = new URL(request.url)
         if (url.pathname === '/src/config/site.json') return Response.json({
-          site: { name: url.hostname === 'other.example.com' ? 'Outra "wiki"' : 'Fixture </script> & Wiki', language: 'en', interfaceLanguage: 'en', homeSlug: 'main-page' },
+          site: { name: url.hostname === 'other.example.com' ? 'Outra "wiki"' : 'Fixture </script> & Wiki', language: 'en', interfaceLanguage: url.hostname === 'other.example.com' ? 'pt-BR' : 'en', homeSlug: 'main-page' },
           branding: { logo: '/src/media/branding/logo.png', favicon: '/src/media/branding/icon.png' },
           navigation: { main: [{ href: '/', label: 'Fixture home' }] },
           access: { mode: 'public' }, seo: { disallow: ['/wiki/unlisted'] }
@@ -62,6 +62,20 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
     const shell = await mf.dispatchFetch('https://wiki.example.com/wiki/alpha')
     assert.equal(shell.status, 404)
     assert.match(await shell.text(), /Page not found/)
+    for (const [language, expected] of [[null, 'página não encontrada'], ['pt-BR', 'página não encontrada'], ['en', 'Page not found']]) {
+      const missing = await mf.dispatchFetch('https://wiki.example.com/api/pages/alpha', { headers: language ? { 'x-wiki-language': language } : {} })
+      assert.equal(missing.status, 404)
+      assert.deepEqual(await missing.json(), { ok: false, error: expected })
+    }
+    for (const [language, expected] of [['pt-BR', /edição recusada: o título é obrigatório/], ['en', /Edit rejected: A title is required/]]) {
+      const invalid = await mf.dispatchFetch('https://wiki.example.com/api/proposals/alpha', {
+        method: 'POST',
+        headers: { 'x-wiki-request': '1', 'x-wiki-language': language, 'content-type': 'application/json' },
+        body: JSON.stringify({ title: '', content: '', summary: '' })
+      })
+      assert.equal(invalid.status, 400)
+      assert.match((await invalid.json()).error, expected)
+    }
     assert.equal((await request('/api/secure/pages/alpha/revisions', editor, { title: 'Alpha' })).status, 428)
     for (const [slug, minRole, text] of [['public-card', 'guest', 'Public template content'], ['restricted-card', 'admin', 'Restricted template content']]) {
       const template = await request('/api/secure/admin/templates', owner, { slug, title: slug, minRole, call: `{{${slug}}}`, renderMarkdown: `**${text}**` })
@@ -102,7 +116,11 @@ test('Functions compiladas integram rotas, Access, conflitos, mídia e disponibi
     assert.doesNotMatch(state, /Editorial prose|superAdminEmail|currentRevisionId|databaseId/)
     const other = await Promise.all([read('/wiki/alpha'), mf.dispatchFetch('https://other.example.com/wiki/alpha')])
     assert.match(await other[0].text(), /Fixture/)
-    assert.match(await other[1].text(), /Outra/)
+    const portuguese = await other[1].text()
+    assert.match(portuguese, /Outra/)
+    assert.match(portuguese, /Link para esta seção/)
+    assert.match(document, /Link to this section/)
+    assert.match(portuguese, /Editorial <strong>prose<\/strong>/)
     const redirect = await read('/wiki/alpha-redirect')
     assert.equal(redirect.status, 302)
     assert.equal(redirect.headers.get('location'), '/wiki/alpha#a-section')

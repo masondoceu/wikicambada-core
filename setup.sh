@@ -8,7 +8,7 @@ while [ -L "$setup_source" ]; do
 done
 setup_dir=$(CDPATH= cd -- "$(dirname -- "$setup_source")" && pwd)
 if ! command -v node >/dev/null 2>&1; then
-  printf '%s\n' 'Node.js 22.13 ou superior não foi encontrado' >&2
+  printf '%s\n' 'Node.js 22.13 or later is required' >&2
   exit 1
 fi
 exec node "$setup_dir/setup.js" "$@"

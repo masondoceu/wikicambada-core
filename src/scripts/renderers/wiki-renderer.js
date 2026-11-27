@@ -1,6 +1,6 @@
 import { APP_VERSION, HOME_SLUG, SITE_NAME, featureEnabled } from '../core/config.js'
 import { applyTemplateVars, browserRenderRuntime, escapeHtml, formatDate, pageUrl, searchUrl, slugify, titleFromSlug } from '../core/utils.js'
-import { interfaceLanguage, interfaceLocale } from '../core/i18n.js'
+import { interfaceLanguage, interfaceLocale, searchMatchLabel } from '../core/i18n.js'
 import { createMarkdownRenderer } from './wiki-markdown.js'
 
 function formatBytes(bytes = 0, locale = interfaceLocale()) {
@@ -54,17 +54,17 @@ export function createWikiRenderer(runtime) {
       const src = safePublicUrl(image.src || image.url || image.image || '')
       if (!src) return ''
       const caption = image.caption || image.legenda || ''
-      const title = images.length > 1 ? `${box.title || 'Infocaixa'} ${index + 1}` : box.title
+      const title = images.length > 1 ? `${box.title || ui('Infocaixa', 'Infobox')} ${index + 1}` : box.title
       return `
         <figure class="infobox-image">
-          <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(caption || title || '')}" data-media-viewer draggable="false" role="button" tabindex="0" data-media-type="image" data-media-src="${escapeHtml(src)}" data-media-title="${escapeHtml(title || caption || 'imagem')}" data-media-caption="${escapeHtml(caption || '')}" />
+          <img loading="lazy" decoding="async" src="${escapeHtml(src)}" alt="${escapeHtml(caption || title || '')}" data-media-viewer draggable="false" role="button" tabindex="0" data-media-type="image" data-media-src="${escapeHtml(src)}" data-media-title="${escapeHtml(title || caption || ui('imagem', 'image'))}" data-media-caption="${escapeHtml(caption || '')}" />
           ${caption ? `<figcaption class="infobox-caption">${inlineMarkdown(caption)}</figcaption>` : ''}
         </figure>
       `
     }).join('')
 
     return `
-      <aside class="infobox" aria-label="Infocaixa">
+      <aside class="infobox" aria-label="${ui('Infocaixa', 'Infobox')}">
         <div class="infobox-title">${escapeHtml(box.title)}</div>
         ${box.subtitle ? `<div class="infobox-subtitle">${escapeHtml(box.subtitle)}</div>` : ''}
         ${imageHtml}
@@ -444,7 +444,7 @@ export function createWikiRenderer(runtime) {
   }
 
   function revisionCompareHtml(page, oldRevision, currentPage, user = {}) {
-    const currentRevisionNumber = (currentPage.revisions || []).find(revision => revision.isCurrent)?.revisionNumber || 'atual'
+    const currentRevisionNumber = (currentPage.revisions || []).find(revision => revision.isCurrent)?.revisionNumber || ui('atual', 'current')
 
     return `
       <article class="revision-compare-page">
@@ -498,8 +498,8 @@ export function createWikiRenderer(runtime) {
     return slug.replace(/[-_]+/g, ' ').replace(/\b\p{L}/gu, letter => letter.toLocaleUpperCase(runtime.locale()))
   }
 
-  function searchResultSubtitle(page) {
-    return String(page?.subtitle || page?.matchType || page?.matchedTitle || page?.matchedSlug || page?.slug || '').trim()
+  function searchResultSubtitle(page, match) {
+    return String(page?.subtitle || match || page?.matchedTitle || page?.matchedSlug || page?.slug || '').trim()
   }
 
   function pageDateValue(value) {
@@ -650,12 +650,14 @@ export function createWikiRenderer(runtime) {
       <section class="search-results">
         ${results.length ? results.map(page => {
           const title = searchResultTitle(page)
-          const subtitle = searchResultSubtitle(page)
+          const match = searchMatchLabel(page.matchType, runtime.language())
+          const subtitle = searchResultSubtitle(page, match)
+          const label = match || ui('resultado', 'result')
           return `
             <article class="search-result">
               <h2><a href="${runtime.pageUrl(page.slug)}" data-link="page" data-slug="${escapeHtml(page.slug)}">${escapeHtml(title)}</a></h2>
               <p>${safeSnippet(page.snippet || subtitle || '')}</p>
-              <small>${escapeHtml(page.exact ? `${ui('correspondência exata por', 'exact match by')} ${page.matchType || ui('resultado', 'result')}` : page.matchType || ui('resultado', 'result'))}${page.updatedAt ? ` · ${ui('atualizado em', 'updated on')} ${date(page.updatedAt)}` : ''}</small>
+              <small>${escapeHtml(page.exact ? `${ui('correspondência exata por', 'exact match by')} ${label}` : label)}${page.updatedAt ? ` · ${ui('atualizado em', 'updated on')} ${date(page.updatedAt)}` : ''}</small>
             </article>
           `
         }).join('') : `<p class="empty-state">${ui('Nenhum resultado encontrado.', 'No results found.')}</p>`}
@@ -1286,7 +1288,7 @@ export function adminTemplatesHtml(templates = []) {
             <div class="template-editor-grid">
               <label>
                 ${ui("Título", "Title")}
-                <input name="title" required placeholder="Múltiplos problemas" />
+                <input name="title" required placeholder="${ui('Múltiplos problemas', 'Multiple issues')}" />
               </label>
               <label>
                 ${ui("Nome da chamada", "Call name")}
@@ -1749,7 +1751,7 @@ export function adminIpHtml(rules = []) {
           </label>
           <label>
             ${ui("Motivo", "Reason")}<br />
-            <input name="reason" placeholder="motivo administrativo" />
+            <input name="reason" placeholder="${ui('motivo administrativo', 'administrative reason')}" />
           </label>
           <button class="secondary-button" type="submit">${ui("Adicionar regra", "Add rule")}</button>
           <p class="editor-note" data-admin-ip-note>${ui("Aceita IPv4, IPv6 e CIDR. O bloqueio de site não bloqueia /admin nem /api/secure, para evitar travamento administrativo acidental.", "Accepts IPv4, IPv6 and CIDR. Site bans preserve access to /admin and /api/secure to avoid accidental administrator lockout.")}</p>

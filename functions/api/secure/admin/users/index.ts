@@ -6,28 +6,28 @@ type Context = EventContext<Env, string, Record<string, never>>
 
 export async function onRequestGet({ request, env }: Context) {
   const user = await requireRole(request, env, 'admin')
-  if (!user) return error('gerenciamento de usuários restrito a administradores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta versão', 501)
+  if (!user) return error('User management is restricted to administrators', 403)
+  if (!hasDb(env)) return error('D1 is not bound in this version', 501)
   return json({ ok: true, user, users: await listEditorUsers(env) })
 }
 
 export async function onRequestPost({ request, env }: Context) {
   const user = await requireRole(request, env, 'admin')
-  if (!user) return error('gerenciamento de usuários restrito a administradores', 403)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta versão', 501)
+  if (!user) return error('User management is restricted to administrators', 403)
+  if (!hasDb(env)) return error('D1 is not bound in this version', 501)
   const input = await request.json().catch(() => ({})) as { action?: string, email?: string, displayName?: string, role?: string, status?: string }
   try {
     if (String(input.action || '').trim() === 'delete') {
       const result = await deleteEditorUser(env, user.email, input.email || '')
-      if (!result) return error('usuário não encontrado', 404)
+      if (!result) return error('User not found', 404)
       return json(result)
     }
 
     const profile = await updateEditorUser(env, user.email, input)
-    if (!profile) return error('usuário não encontrado', 404)
+    if (!profile) return error('User not found', 404)
     return json({ ok: true, profile })
   } catch (exception) {
-    const message = exception instanceof Error ? exception.message : 'erro interno'
+    const message = exception instanceof Error ? exception.message : 'Internal error'
     return error(message, 400)
   }
 }

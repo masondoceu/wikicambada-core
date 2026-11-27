@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { loadFunction, migrationStatements } from './helpers.mjs'
 
-test('D1 local executa migrations, batch atômico e concorrência editorial', async () => {
+test('Local D1 runs migrations and supports atomic batches and concurrent edits', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'wiki-miniflare-'))
   const mf = new Miniflare({ ...convertV4MiniflareOptions({ modules: true, script: 'export default { fetch() { return new Response("test") } }', compatibilityDate: '2026-06-22', d1Databases: { DB: 'test' }, r2Buckets: ['WIKI_BUCKET'], cf: false }), resourcePersistencePath: directory, telemetry: { enabled: false } })
   try {

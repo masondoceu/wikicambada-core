@@ -1,3 +1,6 @@
+import { localizeDiagnostic } from '../scripts/core/i18n.js'
+import { messages } from './messages.js'
+
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -9,7 +12,7 @@ import { operationLock } from './files.js'
 import { backupProject, updateFromBase64, recoverInterrupted } from './updater.js'
 
 export async function startServer({ project = new Project(), port = 8765, host = '127.0.0.1', graceMs = 25000, openBrowser = true } = {}) {
-  if (!['127.0.0.1', '::1'].includes(host)) throw new Error('o setup deve escutar em loopback')
+  if (!['127.0.0.1', '::1'].includes(host)) throw new Error('Setup must listen on loopback')
   const token = randomBytes(32).toString('hex'), clients = new Set(), sockets = new Set()
   let connected = false, timer, closing = false, active = 0, origin
   let resolveClosed
@@ -38,20 +41,34 @@ export async function startServer({ project = new Project(), port = 8765, host =
     if (!closing && connected && clients.size === 0) { clearTimeout(timer); timer = setTimeout(shutdown, graceMs) }
   }
   const server = http.createServer(async (request, response) => {
+    const language = request.headers['x-setup-language']
+    const translate = value => language === 'en' ? value : localizeDiagnostic(value, messages)
+    const verification = result => ({
+      ...result,
+      checks: result.checks.map(item => ({ ...item, name: translate(item.name), message: translate(item.message) }))
+    })
+    const reply = (status, data) => {
+      if (data.error) {
+        const message = translate(data.error)
+        return send(response, status, { ...data, error: language === 'pt-BR' && message === data.error
+          ? messages['Could not complete the local operation'] : message })
+      }
+      return send(response, status, data.verification ? { ...data, verification: verification(data.verification) } : data)
+    }
     try {
       const url = new URL(request.url, origin)
-      if (request.headers.host !== new URL(origin).host || request.headers.origin && request.headers.origin !== origin || request.headers['sec-fetch-site'] === 'cross-site') return send(response, 403, { error: 'origem não permitida' })
+      if (request.headers.host !== new URL(origin).host || request.headers.origin && request.headers.origin !== origin || request.headers['sec-fetch-site'] === 'cross-site') return reply(403, { error: 'Origin not allowed' })
       const ui = project.file('src/setup/ui')
       if (request.method === 'GET' && !url.pathname.startsWith('/api/')) {
         const name = url.pathname === '/' || url.pathname === '/index.html' ? 'index.html' : url.pathname.slice(1)
-        if (!['index.html', 'setup.js', 'setup.css', 'cat-guard.png'].includes(name)) return send(response, 404, { error: 'não encontrado' })
+        if (!['index.html', 'setup.js', 'setup.css', 'cat-guard.png'].includes(name)) return reply(404, { error: 'Not found' })
         let body = fs.readFileSync(path.join(ui, name))
         if (name === 'index.html') body = Buffer.from(body.toString().replace('<head>', `<head>\n  <meta name="setup-token" content="${token}">`))
         return send(response, 200, body, { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png' }[name.split('.').at(-1)])
       }
-      if (!authorized(request, url)) return send(response, 403, { error: 'origem ou autorização local inválida' })
+      if (!authorized(request, url)) return reply(403, { error: 'Invalid origin or local authorization' })
       if (request.method === 'GET' && url.pathname === '/api/events') {
-        if (closing) return send(response, 503, { error: 'encerrando' })
+        if (closing) return reply(503, { error: 'Shutting down' })
         clearTimeout(timer); connected = true; clients.add(response)
         response.writeHead(200, { ...headers, 'content-type': 'text/event-stream', connection: 'keep-alive' }); response.write(': connected\n\n')
         const heartbeat = setInterval(() => response.write(': keepalive\n\n'), 10000)
@@ -59,15 +76,17 @@ export async function startServer({ project = new Project(), port = 8765, host =
         return
       }
       if (request.method === 'GET' && url.pathname === '/api/state') return send(response, 200, { config: project.config(), newConfig: genericConfig(), installation: project.installation(), presets: project.presets() })
-      if (request.method === 'GET' && url.pathname === '/api/verify') return send(response, 200, project.verify())
-      if (request.method !== 'POST') return send(response, 404, { error: 'rota inválida' })
-      if (closing) return send(response, 503, { error: 'encerrando' })
-      if (request.headers['content-type']?.split(';')[0] !== 'application/json') return send(response, 400, { error: 'tipo de conteúdo inválido' })
+      if (request.method === 'GET' && url.pathname === '/api/verify') return reply(200, verification(project.verify()))
+      if (request.method !== 'POST') return reply(404, { error: 'Invalid route' })
+      if (closing) return reply(503, { error: 'Shutting down' })
+      if (request.headers['content-type']?.split(';')[0] !== 'application/json') return reply(400, { error: 'Invalid content type' })
       const chunks = []; let size = 0
-      for await (const bytes of request) { size += bytes.length; if (size > 90 * 1024 * 1024) { send(response, 413, { error: 'requisição longa demais' }); return } chunks.push(bytes) }
-      const payload = JSON.parse(Buffer.concat(chunks).toString() || '{}')
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('o corpo da requisição deve ser um objeto JSON')
-      if (closing) return send(response, 503, { error: 'encerrando' })
+      for await (const bytes of request) { size += bytes.length; if (size > 90 * 1024 * 1024) { reply(413, { error: 'Request too large' }); return } chunks.push(bytes) }
+      let payload
+      try { payload = JSON.parse(Buffer.concat(chunks).toString() || '{}') }
+      catch { return reply(400, { ok: false, error: 'Invalid JSON' }) }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('The request body must be a JSON object')
+      if (closing) return reply(503, { error: 'Shutting down' })
       if (url.pathname === '/api/shutdown') { send(response, 200, { ok: true }); response.on('finish', shutdown); setImmediate(shutdown); return }
       active++
       try {
@@ -77,10 +96,12 @@ export async function startServer({ project = new Project(), port = 8765, host =
         else if (url.pathname === '/api/update') result = await updateFromBase64(project, payload.file?.data || '', payload.file?.name, payload.expectedSha256)
         else if (url.pathname === '/api/migrate-legacy') result = await migrateLegacy(project, payload)
         else if (url.pathname === '/api/recover-local') result = await recoverInterrupted(project)
-        else return send(response, 404, { error: 'rota inválida' })
-        send(response, 200, result)
+        else return reply(404, { error: 'Invalid route' })
+        reply(200, result)
       } finally { active--; if (closing) await finish() }
-    } catch (error) { if (!response.headersSent) send(response, 400, { ok: false, error: error.code ? 'não foi possível concluir a operação local' : error.message }) }
+    } catch (error) {
+      if (!response.headersSent) reply(400, { ok: false, error: error.code ? 'Could not complete the local operation' : error.message })
+    }
   })
   server.requestTimeout = 0
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)) })

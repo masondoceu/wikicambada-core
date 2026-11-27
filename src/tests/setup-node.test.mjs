@@ -33,7 +33,7 @@ function startProcess(command, args, options) {
   return { child, ready, exited }
 }
 
-test('Node configura instalação nova e reconfigura preservando opções, dados e identidade', async () => {
+test('Node setup creates and reconfigures installations while preserving settings, data and identity', async () => {
   const project = await fixture()
   let result = await project.save({ intent: 'new', preset: 'private', config: { site: { name: 'New Wiki' }, features: { cloudflareBadge: false } } })
   assert.equal(result.config.features.cloudflareBadge, false)
@@ -46,7 +46,7 @@ test('Node configura instalação nova e reconfigura preservando opções, dados
   assert.equal(result.config.features.cloudflareBadge, false)
   assert.equal(project.verify().ok, true)
 })
-test('Node preserva configurações TOML desconhecidas e não reutiliza bindings em outra wiki', async () => {
+test('Node setup preserves unknown TOML settings and does not reuse bindings for a new wiki', async () => {
   const project = await fixture(), file = project.file('wrangler.toml')
   let toml = vendor.toml.parse(fs.readFileSync(file, 'utf8'))
   toml.vars.CUSTOM = 'retained'; toml.d1_databases[0].database_id = '11111111-1111-1111-1111-111111111111'
@@ -58,14 +58,14 @@ test('Node preserva configurações TOML desconhecidas e não reutiliza bindings
   toml = vendor.toml.parse(fs.readFileSync(file, 'utf8'))
   assert.equal(toml.vars.CUSTOM, undefined); assert.equal(toml.d1_databases[0].database_id, '')
 })
-test('configuração interrompida reverte todos os arquivos e assets', async () => {
+test('Interrupted configuration rolls back all files and assets', async () => {
   const project = await fixture(), names = ['src/config/site.json', 'src/config/installation.json', 'wrangler.toml', 'package.json', 'package-lock.json'], before = names.map(name => fs.readFileSync(project.file(name)))
   project.generatePackage = () => { throw new Error('injected failure') }
   await assert.rejects(project.save({ config: { site: { name: 'Changed' } } }), /injected failure/)
   names.forEach((name, index) => assert.deepEqual(fs.readFileSync(project.file(name)), before[index]))
   assert.equal(fs.existsSync(project.file('.wikicambada/configuration-journal.json')), false)
 })
-test('atualizador Node preserva assets colidentes, configuração, dados e secrets', async () => {
+test('The Node updater preserves colliding assets, settings, data and secrets', async () => {
   const project = await fixture(), logo = 'src/media/images/core/cat-guard.png'
   await project.save({ config: { branding: { logo: '/' + logo }, features: { cloudflareBadge: false } } })
   fs.writeFileSync(project.file(logo), 'custom logo')
@@ -79,14 +79,14 @@ test('atualizador Node preserva assets colidentes, configuração, dados e secre
   assert.equal(fs.readFileSync(project.file('.dev.vars'), 'utf8'), 'SECRET=fixture')
   assert.equal(fs.readFileSync(project.file('src/data/custom/data.txt'), 'utf8'), 'retained')
 })
-test('modificação local e hash confiável inválido são recusados antes do backup', async () => {
+test('Local modifications and trusted hash mismatches are rejected before backup', async () => {
   const project = await fixture()
-  await assert.rejects(updateFromBase64(project, encoded, 'core.zip', '0'.repeat(64)), /hash confiável/)
+  await assert.rejects(updateFromBase64(project, encoded, 'core.zip', '0'.repeat(64)), /trusted hash/)
   fs.writeFileSync(project.file('src/scripts/app.js'), 'local work')
-  await assert.rejects(updateFromBase64(project, encoded), /alterações locais/)
+  await assert.rejects(updateFromBase64(project, encoded), /Local Core files have changed/)
   assert.equal(fs.existsSync(project.file('.wikicambada/backups')), false)
 })
-test('atualizador renomeia o README gerenciado e restaura sua grafia em caso de falha', async () => {
+test('The updater renames the managed README and restores its original case on failure', async () => {
   const project = await fixture()
   const manifest = project.read('wikicambada-files.json')
   const oldName = 'README.MD'
@@ -100,7 +100,7 @@ test('atualizador renomeia o README gerenciado e restaura sua grafia em caso de 
 
   const verify = project.verify
   project.verify = () => ({ ok: false })
-  await assert.rejects(updateFromBase64(project, encoded), /pós-atualização/)
+  await assert.rejects(updateFromBase64(project, encoded), /Post-update verification failed/)
   assert.ok(fs.readdirSync(project.root).includes(oldName))
   assert.equal(hash(project.file(oldName)), manifest.files[oldName])
 
@@ -113,15 +113,15 @@ test('atualizador renomeia o README gerenciado e restaura sua grafia em caso de 
   const files = project.read('wikicambada-files.json').files
   for (const name of ['README.md', 'readmes/README.pt-BR.md']) assert.equal(hash(project.file(name)), files[name])
 })
-test('falha posterior à cópia aciona rollback e preserva estado local', async () => {
+test('A failure after copying rolls back and preserves local state', async () => {
   const project = await fixture(), before = fs.readFileSync(project.file('src/scripts/app.js'))
   project.write('.wikicambada/state.json', { fixture: true })
   project.verify = () => ({ ok: false })
-  await assert.rejects(updateFromBase64(project, encoded), /pós-atualização/)
+  await assert.rejects(updateFromBase64(project, encoded), /Post-update verification failed/)
   assert.deepEqual(fs.readFileSync(project.file('src/scripts/app.js')), before)
   assert.deepEqual(project.read('.wikicambada/state.json'), { fixture: true })
 })
-test('recuperação Node entende journals legados de atualização e configuração', async () => {
+test('Node recovery reads legacy update and configuration journals', async () => {
   const project = await fixture(), backup = backupProject(project), before = fs.readFileSync(project.file('src/scripts/app.js'))
   fs.writeFileSync(project.file('src/scripts/app.js'), 'interrupted')
   project.write('.wikicambada/update-journal.json', { backup: path.relative(project.root, backup).replaceAll(path.sep, '/'), state: null })
@@ -132,34 +132,34 @@ test('recuperação Node entende journals legados de atualização e configuraç
   assert.equal((await recoverInterrupted(project)).recovered, true)
   assert.equal(fs.readFileSync(project.file('.dev.vars')).length, 0)
 })
-test('exclusão mútua recusa concorrência e libera o lock após falha', async () => {
+test('The operation lock rejects concurrent work and releases after a failure', async () => {
   const project = await fixture()
-  await operationLock(project.root, () => assert.rejects(operationLock(project.root, () => {}), /outra operação/))
+  await operationLock(project.root, () => assert.rejects(operationLock(project.root, () => {}), /Another local operation/))
   await assert.rejects(operationLock(project.root, () => { throw new Error('interrupted') }), /interrupted/)
   await operationLock(project.root, () => {})
 })
-test('versões, navegação e caminhos são validados sem dependência de plataforma', () => {
+test('Version, navigation and path validation work across platforms', () => {
   const versions = ['1.1.0-alpha.2', '1.1.0-beta', '1.1.0-beta.2', '1.1.0-rc.1', '1.1.0', '1.1.0-r1', '1.1.0-r2', '1.1.1-indev.1', '1.1.1-indev.2', '1.1.1']
   assert.deepEqual([...versions].reverse().sort(compareVersions), versions)
   assert.throws(() => versionTuple('1.1.0-unknown'))
-  for (const value of ['../x', 'a\\b', 'CON.txt', 'folder/name.', 'file:stream', 'a/../b']) assert.throws(() => safePath(value), /caminho/)
+  for (const value of ['../x', 'a\\b', 'CON.txt', 'folder/name.', 'file:stream', 'a/../b']) assert.throws(() => safePath(value), /[Pp]ath/)
   const config = genericConfig(); config.navigation.external = [{ label: 'unsafe', href: 'javascript:alert(1)' }]
-  assert.throws(() => validateConfig(config), /URL inválida/)
+  assert.throws(() => validateConfig(config), /invalid URL/)
   config.navigation.external = []; config.cloudflare = { projectName: 'My Project; touch injected', databaseName: 'db && command', bucketName: 'Bucket With Spaces' }
   assert.deepEqual(validateConfig(config).cloudflare, { projectName: 'my-project-touch-injected', databaseName: 'db-command', bucketName: 'bucket-with-spaces' })
 })
-test('ZIP rejeita tipos simbólicos, duplicatas e arquivos não registrados', async () => {
+test('ZIP validation rejects symbolic links, duplicates and unlisted files', async () => {
   const project = await fixture(), release = project.release()
   fs.writeFileSync(project.file('unregistered.js'), 'bad')
-  assert.throws(() => validateRelease(project, project.root, release), /integridade/)
+  assert.throws(() => validateRelease(project, project.root, release), /integrity/)
   const zip = new vendor.yazl.ZipFile(), file = path.join(directory, 'unsafe.zip')
   const completed = new Promise((resolve, reject) => zip.outputStream.pipe(fs.createWriteStream(file)).on('close', resolve).on('error', reject))
   zip.addBuffer(Buffer.from('link'), 'link', { mode: 0o120777 }); zip.end(); await completed
   const target = fs.mkdtempSync(path.join(directory, 'unsafe-'))
-  await assert.rejects(extractZip(file, target), /tipos de arquivo/)
+  await assert.rejects(extractZip(file, target), /file types/)
   assert.deepEqual(fs.readdirSync(target), [])
 })
-test('SQLite, histórico, perfis, objetos e configuração sobrevivem ao backup integral', async () => {
+test('Full recovery preserves SQLite, history, profiles, objects and configuration', async () => {
   const root = fs.mkdtempSync(path.join(directory, 'recovery-')), database = path.join(root, 'source.sqlite'), objects = path.join(root, 'objects')
   fs.mkdirSync(path.join(objects, 'uploads'), { recursive: true }); fs.writeFileSync(path.join(objects, 'uploads/image.png'), 'original media')
   const db = new DatabaseSync(database)
@@ -181,22 +181,22 @@ test('SQLite, histórico, perfis, objetos e configuração sobrevivem ao backup 
   assert.equal(restored.prepare('SELECT target_fragment FROM redirects').get().target_fragment, 'section')
   assert.equal(restored.prepare('SELECT value FROM _cf_METADATA').get().value, 'retained'); restored.close()
   assert.deepEqual(fs.readFileSync(path.join(target, 'configuration/site.json')), fs.readFileSync(path.join(configuration, 'site.json')))
-  await assert.rejects(restoreLocal(archive, objects), /novo e vazio/)
+  await assert.rejects(restoreLocal(archive, objects), /new, empty destination/)
   fs.unlinkSync(path.join(objects, 'uploads/image.png'))
-  await assert.rejects(backupLocal(database, objects, path.join(root, 'missing')), /ausente/)
+  await assert.rejects(backupLocal(database, objects, path.join(root, 'missing')), /Missing or invalid upload object/)
   assert.equal(fs.existsSync(path.join(root, 'missing')), false)
   const incompatible = new DatabaseSync(database); incompatible.exec('CREATE TABLE custom_data (id TEXT)'); incompatible.close()
-  await assert.rejects(backupLocal(database, objects, path.join(root, 'incompatible')), /schema incompatível/)
+  await assert.rejects(backupLocal(database, objects, path.join(root, 'incompatible')), /schema is incompatible/)
   assert.equal(fs.readFileSync(path.join(target, 'objects/uploads/image.png'), 'utf8'), 'original media')
   fs.writeFileSync(path.join(archive, 'objects/uploads/image.png'), 'corrupt')
-  await assert.rejects(validateArchive(archive), /corrompido/)
-  await assert.rejects(restoreLocal(archive, path.join(root, 'failed')), /corrompido/)
+  await assert.rejects(validateArchive(archive), /Corrupt file/)
+  await assert.rejects(restoreLocal(archive, path.join(root, 'failed')), /Corrupt file/)
   assert.equal(fs.existsSync(path.join(root, 'failed')), false)
 })
 
-test('contratos de release são conferidos mesmo com hashes válidos', async () => {
+test('Release contracts are checked even when hashes are valid', async () => {
   for (const [filename, change, message] of [
-    ['package-lock.json', data => { data.version = '1.1.0-r1' }, /versões divergentes/],
+    ['package-lock.json', data => { data.version = '1.1.0-r1' }, /Version mismatch/],
     ['package-lock.json', data => { data.packages[''].devDependencies = {} }, /lockfile/],
     ['wikicambada-release.json', data => { data.databaseSchema = 16 }, /schema/],
     ['wikicambada-release.json', data => { data.migrations.pop() }, /schema/]
@@ -208,13 +208,13 @@ test('contratos de release são conferidos mesmo com hashes válidos', async () 
   const project = await fixture()
   project.write('src/config/installation.json', { coreVersion: '1.1.1' })
   project.write('wikicambada-files.json', { files: releaseManifest(project.root) })
-  assert.throws(() => validateRelease(project, project.root), /anterior/)
+  assert.throws(() => validateRelease(project, project.root), /older than the installed version/)
 })
 
-test('identidade valida assinaturas, preserva assets referenciados e escapa TOML', async () => {
+test('Branding validates file signatures, preserves referenced assets and escapes TOML', async () => {
   const project = await fixture()
-  for (const [type, content] of [['image/png', '<html>'], ['image/svg+xml', '<svg/>']]) assert.throws(() => project.decodeAsset({ type, data: Buffer.from(content).toString('base64') }, 'logo'), /não corresponde|não é suportado/)
-  assert.throws(() => project.decodeAsset({ type: 'image/png', data: Buffer.alloc(8 * 1024 * 1024 + 1).toString('base64') }, 'logo'), /excede/)
+  for (const [type, content] of [['image/png', '<html>'], ['image/svg+xml', '<svg/>']]) assert.throws(() => project.decodeAsset({ type, data: Buffer.from(content).toString('base64') }, 'logo'), /do not match|Unsupported branding file format/)
+  assert.throws(() => project.decodeAsset({ type: 'image/png', data: Buffer.alloc(8 * 1024 * 1024 + 1).toString('base64') }, 'logo'), /exceeds/)
   const config = genericConfig(); config.branding.logo = 'https://user:password@example.com/logo.png'
   assert.equal(validateConfig(config).branding.logo, genericConfig().branding.logo)
   await project.save({ config: { site: { name: 'Wiki"\nINJECTED = "value' } } })
@@ -225,7 +225,7 @@ test('identidade valida assinaturas, preserva assets referenciados e escapa TOML
   assert.deepEqual([...installationAssets(project)].sort(), ['src/data/custom-icons.json', 'src/media/images/core/cat-guard.png'])
 })
 
-test('ZIP regular sem bits de tipo é aceito e caminhos ambíguos são recusados antes da extração', async () => {
+test('ZIP files without type bits are accepted and ambiguous paths are rejected before extraction', async () => {
   async function zipped(name, entryName, mode = 0o600) {
     const zip = new vendor.yazl.ZipFile(), file = path.join(directory, name)
     const completed = new Promise((resolve, reject) => zip.outputStream.pipe(fs.createWriteStream(file)).on('close', resolve).on('error', reject))
@@ -235,14 +235,14 @@ test('ZIP regular sem bits de tipo é aceito e caminhos ambíguos são recusados
   await extractZip(regular, target); assert.equal(fs.readFileSync(path.join(target, 'regular.txt'), 'utf8'), 'valid')
   for (const name of ['CON.txt', 'folder/name.', 'folder/name:stream']) {
     const file = await zipped('invalid-' + Math.random() + '.zip', name), empty = fs.mkdtempSync(path.join(directory, 'invalid-'))
-    await assert.rejects(extractZip(file, empty), /caminho/); assert.deepEqual(fs.readdirSync(empty), [])
+    await assert.rejects(extractZip(file, empty), /[Pp]ath/); assert.deepEqual(fs.readdirSync(empty), [])
   }
   const file = await zipped('backslash.zip', 'folder/file.txt')
   fs.writeFileSync(file, Buffer.from(fs.readFileSync(file).toString('latin1').replaceAll('folder/file.txt', 'folder\\file.txt'), 'latin1'))
-  await assert.rejects(extractZip(file, fs.mkdtempSync(path.join(directory, 'backslash-'))), /invalid characters|caminho/)
+  await assert.rejects(extractZip(file, fs.mkdtempSync(path.join(directory, 'backslash-'))), /invalid characters|[Pp]ath/)
 })
 
-test('badge, distribuição genérica e build seguro sobrevivem à configuração e atualização', async () => {
+test('Badges, generic distribution and safe builds survive configuration and updates', async () => {
   const project = await fixture()
   const pkg = project.read('package.json'), lock = project.read('package-lock.json')
   assert.equal(pkg.name, 'wikicambada-core')
@@ -270,7 +270,7 @@ test('badge, distribuição genérica e build seguro sobrevivem à configuraçã
   const saved = await project.save({ config: {} })
   assert.equal(saved.config.features.cloudflareBadge, true)
   assert.equal(saved.config.features.builtWithCloudflareBadge, false)
-  assert.throws(() => validateConfig({ ...genericConfig(), features: { builtWithCloudflareBadge: 'true' } }), /booleana/)
+  assert.throws(() => validateConfig({ ...genericConfig(), features: { builtWithCloudflareBadge: 'true' } }), /must be a boolean/)
   for (const file of ['wrangler.toml', 'src/config/site.json']) assert.doesNotMatch(fs.readFileSync(project.file(file), 'utf8').toLowerCase(), /cambada\.party|cloudflareaccess\.com|national\.shitposting|heartbeat/)
   assert.equal(fs.existsSync(project.file('setup.py')), false)
   assert.ok(fs.existsSync(project.file('src/setup/vendor.cjs')))
@@ -280,15 +280,15 @@ test('badge, distribuição genérica e build seguro sobrevivem à configuraçã
   for (const name of fs.readdirSync(output, { recursive: true })) assert.doesNotMatch(name, /setup|\.py$|\.zip$|\.dev.vars|state\.json|installation\.json|backups|migrations/)
 })
 
-test('lock de operação é liberado pelo sistema após queda do processo', async () => {
+test('The operating system releases the lock when the process crashes', async () => {
   const project = await fixture(), module = pathToFileURL(project.file('src/setup/files.js')).href
   const process = startProcess(globalThis.process.execPath, ['--input-type=module', '-e', `import { operationLock } from ${JSON.stringify(module)}; await operationLock(${JSON.stringify(project.root)}, async () => { console.log('locked'); await new Promise(() => setInterval(() => {}, 1000)) })`])
-  try { await process.ready; await assert.rejects(operationLock(project.root, () => {}), /outra operação/) }
+  try { await process.ready; await assert.rejects(operationLock(project.root, () => {}), /Another local operation/) }
   finally { process.child.kill(); await process.exited }
   await operationLock(project.root, () => {})
 })
 
-test('Node e lançadores abrem fora do diretório do projeto e encerram sem dependências instaladas', async () => {
+test('Node and launchers start outside the project directory and exit without installed dependencies', async () => {
   const project = new Project(path.join(directory, 'wiki com espaços ü')); fs.mkdirSync(project.root); await extractZip(archive, project.root)
   assert.equal(fs.existsSync(project.file('node_modules')), false)
   const verify = spawnSync(process.execPath, [project.file('setup.js'), 'verify'], { cwd: directory, encoding: 'utf8' })

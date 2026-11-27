@@ -11,8 +11,8 @@ import { TABLES, EMPTY_ORDER, quote, columns, initializeDatabase, jsonLines, bac
 export class RecoveryClient {
   constructor(url, jwt) {
     const parsed = new URL(url)
-    if (parsed.username || parsed.password || parsed.search || parsed.hash || !['', '/'].includes(parsed.pathname) || parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname))) throw new Error('URL de recuperação inválida')
-    if (!jwt || /[\r\n]/.test(jwt)) throw new Error('JWT de acesso inválido')
+    if (parsed.username || parsed.password || parsed.search || parsed.hash || !['', '/'].includes(parsed.pathname) || parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname))) throw new Error('Invalid recovery URL')
+    if (!jwt || /[\r\n]/.test(jwt)) throw new Error('Invalid Access JWT')
     this.url = parsed.origin + '/api/secure/admin/recovery'; this.jwt = jwt; this.token = null
   }
   async request(method, params, body, headers = {}) {
@@ -20,8 +20,8 @@ export class RecoveryClient {
     const values = { 'cf-access-jwt-assertion': this.jwt, Cookie: 'CF_Authorization=' + this.jwt, 'x-wiki-request': '1', Accept: 'application/json', ...(this.token ? { 'x-wiki-recovery': this.token } : {}), ...headers }
     if (body && typeof body === 'object' && !(body instanceof Readable)) { body = JSON.stringify(body); values['content-type'] = 'application/json' }
     let response
-    try { response = await fetch(target, { method, headers: values, body, redirect: 'manual', signal: AbortSignal.timeout(60000), ...(body instanceof Readable ? { duplex: 'half' } : {}) }) } catch { throw new Error('a API de recuperação não está disponível') }
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`recuperação recusada pela API (HTTP ${response.status})`) }
+    try { response = await fetch(target, { method, headers: values, body, redirect: 'manual', signal: AbortSignal.timeout(60000), ...(body instanceof Readable ? { duplex: 'half' } : {}) }) } catch { throw new Error('The recovery API is unavailable') }
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`The recovery API rejected the request (HTTP ${response.status})`) }
     return response
   }
   async json(method, params, body) { return (await this.request(method, params, body)).json() }
@@ -33,7 +33,7 @@ export class RecoveryClient {
   async abort() { while (!(await this.post('abort')).done) {} }
 }
 export async function backupRemote(client, destination, configuration) {
-  if (fs.existsSync(destination)) throw new Error('o destino do backup já existe')
+  if (fs.existsSync(destination)) throw new Error('The backup destination already exists')
   const operation = await client.post('begin-backup'); client.token = operation.token
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'wiki-remote-backup-')); let completed = false
   try {
@@ -42,7 +42,7 @@ export async function backupRemote(client, destination, configuration) {
     const db = new DatabaseSync(database)
     try {
       initializeDatabase(db)
-      if (operation.databaseSchema !== 17 || !isDeepStrictEqual(operation.tables, columns(db))) throw new Error('schema remoto incompatível com esta distribuição')
+      if (operation.databaseSchema !== 17 || !isDeepStrictEqual(operation.tables, columns(db))) throw new Error('The remote schema is incompatible with this distribution')
       db.exec('BEGIN')
       try {
         for (const table of EMPTY_ORDER) db.exec('DELETE FROM ' + quote(table))
@@ -65,7 +65,7 @@ export async function backupRemote(client, destination, configuration) {
         const target = path.join(objects, safePath(item.key)); fs.mkdirSync(path.dirname(target), { recursive: true })
         const response = await client.request('GET', { action: 'object', key: item.key })
         await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(target, { flags: 'wx' }))
-        if (fs.statSync(target).size !== item.size) throw new Error('transferência R2 incompleta')
+        if (fs.statSync(target).size !== item.size) throw new Error('Incomplete R2 transfer')
         metadata[item.key] = { httpMetadata: item.httpMetadata, customMetadata: item.customMetadata }
       }
       cursor = page.next
@@ -87,10 +87,10 @@ export async function restoreRemote(client, archive, stateFile, resume = false) 
       let phase
       if (fs.existsSync(stateFile)) {
         const state = readJson(stateFile)
-        if (!resume || state.url !== client.url || state.manifestHash !== manifestHash) throw new Error('há uma restauração pendente; verifique o destino e o backup antes de continuar')
+        if (!resume || state.url !== client.url || state.manifestHash !== manifestHash) throw new Error('A restore is pending. Check the destination and backup before continuing')
         client.token = state.token
         const status = (await client.json('GET')).operation
-        if (!status || status.token !== client.token || status.kind !== 'restore') throw new Error('a restauração pendente não corresponde ao destino')
+        if (!status || status.token !== client.token || status.kind !== 'restore') throw new Error('The pending restore does not match the destination')
         phase = status.phase
       } else {
         const operation = await client.post('begin-restore', { databaseSchema: 17, tables, counts, objectCount }); client.token = operation.token

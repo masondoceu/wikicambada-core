@@ -1,5 +1,11 @@
 # Changelog do WikiCambada Core
 
+## v1.1.1-indev.2 · Everywhere
+
+- Standardize technical diagnostics and test descriptions in English.
+- Localize setup and wiki errors independently while retaining existing API responses for legacy clients.
+- Preserve the hybrid renderer, both interface languages and database schema 17.
+
 ## v1.1.1-indev.1 · Everywhere
 
 - Server-render public reading routes and enhance the initial HTML with the existing SPA.

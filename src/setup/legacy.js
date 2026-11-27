@@ -23,7 +23,7 @@ const overlaps = (a, b) => !path.relative(a, b) || inside(a, b) || inside(b, a)
 const capture = (source, pattern) => source.match(pattern)?.[1] || ''
 
 function localPath(value) {
-  if (typeof value !== 'string' || !path.isAbsolute(value) || /^[/\\]{2}/.test(value)) throw new Error('informe um caminho local absoluto')
+  if (typeof value !== 'string' || !path.isAbsolute(value) || /^[/\\]{2}/.test(value)) throw new Error('An absolute local path is required')
   const result = path.resolve(value)
   checkAncestors(result)
   return result
@@ -39,11 +39,11 @@ function inventory(root, ignored = excluded) {
     for (let i = 1; i <= parts.length; i++) {
       const name = parts.slice(0, i).join('/')
       const key = name.toLowerCase()
-      if (lowerPaths.has(key) && lowerPaths.get(key) !== name) throw new Error('a origem contém caminhos que diferem apenas por maiúsculas')
+      if (lowerPaths.has(key) && lowerPaths.get(key) !== name) throw new Error('The source contains paths that differ only in case')
       lowerPaths.set(key, name)
     }
   }
-  if (files.length > 5000 || bytes > 256 * 1024 * 1024) throw new Error('a origem excede os limites da migração')
+  if (files.length > 5000 || bytes > 256 * 1024 * 1024) throw new Error('The source exceeds the migration limits')
   return files.map(file => relative(root, file))
 }
 
@@ -69,44 +69,44 @@ function navigation(html) {
     for (const [, link, label] of content.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
       const href = htmlText(attribute(link, 'href'))
       if (section === 'external' && (attribute(link, 'data-chrome-link') || href === '/admin')) continue
-      if (!label.trim() || /[<>]/.test(label) || !/^(?:\/(?!\/)|https?:\/\/)/i.test(href) || /[\\\x00-\x1f]/.test(href)) throw new Error('a navegação legada precisa de revisão')
+      if (!label.trim() || /[<>]/.test(label) || !/^(?:\/(?!\/)|https?:\/\/)/i.test(href) || /[\\\x00-\x1f]/.test(href)) throw new Error('Review the legacy navigation')
       const special = features.get(href)
       const kind = /^https?:/i.test(href) ? 'external' : href === '/' ? 'home' : attribute(link, 'data-link') === 'random' ? 'random' : 'page'
       sections[section].push({ label: htmlText(label), href, kind, ...(kind === 'random' ? { feature: 'randomPage' } : special ? { feature: 'specialPages.' + special } : {}) })
     }
   }
-  if (!sections.main?.some(link => link.kind === 'home') || !sections.community?.length) throw new Error('o menu da instalação legada está incompleto ou não é reconhecido')
+  if (!sections.main?.some(link => link.kind === 'home') || !sections.community?.length) throw new Error('The legacy navigation menu is incomplete or unrecognized')
   return { external: [], ...sections }
 }
 
 export function inspectLegacy(source, base) {
   const files = new Set(inventory(source))
   const requireFile = file => {
-    if (!files.has(file)) throw new Error('a instalação legada está incompleta: ' + file)
-    if (fs.statSync(path.join(source, file)).size > 4 * 1024 * 1024) throw new Error('um arquivo de configuração ou código excede o limite')
+    if (!files.has(file)) throw new Error(`Incomplete legacy installation: ${file}`)
+    if (fs.statSync(path.join(source, file)).size > 4 * 1024 * 1024) throw new Error('A configuration or source file exceeds the size limit')
     return normalize(fs.readFileSync(path.join(source, file), 'utf8'))
   }
-  if (['wikicambada-release.json', 'wikicambada-files.json', 'src/config/site.json', 'src/config/installation.json'].some(file => files.has(file))) throw new Error('esta instalação já usa configuração do Core; use o atualizador')
+  if (['wikicambada-release.json', 'wikicambada-files.json', 'src/config/site.json', 'src/config/installation.json'].some(file => files.has(file))) throw new Error('This installation already uses the Core configuration. Use the updater')
   for (const file of ['src/scripts/app.js', 'functions/_middleware.ts', 'functions/api/health.ts', 'functions/api/pages/[[slug]].ts', 'functions/api/upload/[[key]].ts']) {
-    if (!files.has(file)) throw new Error('a instalação legada está incompleta: ' + file)
+    if (!files.has(file)) throw new Error(`Incomplete legacy installation: ${file}`)
   }
   let pkg, wrangler
   try {
     pkg = JSON.parse(requireFile('package.json'))
     wrangler = vendor.toml.parse(requireFile('wrangler.toml'))
-  } catch { throw new Error('arquivos de configuração da origem ausentes ou inválidos') }
+  } catch { throw new Error('Missing or invalid source configuration files') }
   const constants = requireFile('src/scripts/core/config.js')
   if (pkg?.version !== version ||
       capture(constants, /export const APP_VERSION\s*=\s*['"]v([^'"]+)['"]/) !== version ||
-      !['1.0.13', 'v1.0.13'].includes(wrangler.vars?.WIKI_CORE_VERSION)) throw new Error('apenas instalações legadas verificáveis da versão ' + version + ' são suportadas')
+      !['1.0.13', 'v1.0.13'].includes(wrangler.vars?.WIKI_CORE_VERSION)) throw new Error(`Only verifiable legacy installations of version ${version} are supported`)
 
   const schema = base.release().migrations
   const names = [...files].filter(name => /^src\/data\/migrations\/.*\.sql$/i.test(name))
-  if (!Array.isArray(schema) || names.length !== 14 || !schema.slice(0, 14).every(name => files.has(name))) throw new Error('inventário de migrations legadas incompatível')
+  if (!Array.isArray(schema) || names.length !== 14 || !schema.slice(0, 14).every(name => files.has(name))) throw new Error('Incompatible legacy migration inventory')
   for (const name of schema.slice(0, 14)) {
     const sql = requireFile(name), hash = digest(sql)
     if (hash !== digest(normalize(fs.readFileSync(base.file(name), 'utf8'))) &&
-      !(name.endsWith('/0009_template_system_v2.sql') && hash === profile.templateMigration)) throw new Error('migration legada divergente: ' + name)
+      !(name.endsWith('/0009_template_system_v2.sql') && hash === profile.templateMigration)) throw new Error(`Legacy migration does not match: ${name}`)
   }
 
   const db = wrangler.d1_databases?.filter?.(item => item?.binding === 'DB')
@@ -114,12 +114,12 @@ export function inspectLegacy(source, base) {
   const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
   if (db?.length !== 1 || bucket?.length !== 1 || !uuid.test(db[0].database_id) ||
       db[0].preview_database_id && !uuid.test(db[0].preview_database_id) ||
-      db[0].migrations_dir !== 'src/data/migrations' || db[0].migrations_table !== 'd1_migrations') throw new Error('bindings ou registro de migrations incompatíveis')
-  if (Object.keys(wrangler).some(key => ['env', 'build', 'site', 'assets', 'main'].includes(key))) throw new Error('o Wrangler legado possui configuração de build ou ambientes que exigem revisão manual')
+      db[0].migrations_dir !== 'src/data/migrations' || db[0].migrations_table !== 'd1_migrations') throw new Error('Incompatible bindings or migration records')
+  if (Object.keys(wrangler).some(key => ['env', 'build', 'site', 'assets', 'main'].includes(key))) throw new Error('The legacy Wrangler build configuration or environments require manual review')
   let issuer
-  try { issuer = new URL(wrangler.vars.ACCESS_TEAM_DOMAIN) } catch { throw new Error('configure o issuer e o audience do Access na origem da migração') }
+  try { issuer = new URL(wrangler.vars.ACCESS_TEAM_DOMAIN) } catch { throw new Error('Configure the Access issuer and audience in the migration source') }
   if (issuer.protocol !== 'https:' || issuer.username || issuer.password || issuer.search || issuer.hash || issuer.pathname !== '/' ||
-      typeof wrangler.vars.ACCESS_AUD !== 'string' || !wrangler.vars.ACCESS_AUD.trim()) throw new Error('configure o issuer e o audience do Access na origem da migração')
+      typeof wrangler.vars.ACCESS_AUD !== 'string' || !wrangler.vars.ACCESS_AUD.trim()) throw new Error('Configure the Access issuer and audience in the migration source')
 
   const html = requireFile('index.html'), stylesheet = requireFile('src/styles/wiki.css')
   const language = capture(html, /<html\b[^>]*\blang=["'](pt-BR|en)["']/i)
@@ -133,19 +133,19 @@ export function inspectLegacy(source, base) {
   const guide = capture(html, /<nav\b[^>]*data-account-links[^>]*>\s*<a href="\/wiki\/([a-z0-9-]+)"/i)
   const about = menus.community.find(item => /^(sobre|about)(?:\s|$)/i.test(item.label))?.href.match(/^\/wiki\/([a-z0-9-]+)$/)?.[1]
   const owners = Object.entries(ownerPatterns).map(([file, pattern]) => requireFile(file).match(pattern)?.[2]?.toLowerCase())
-  if (!language || !name || !tagline || !homeSlug || !about || !guide || !owners[0] || owners[0] !== owners[1]) throw new Error('a identidade ou o superadministrador da origem precisam de revisão')
+  if (!language || !name || !tagline || !homeSlug || !about || !guide || !owners[0] || owners[0] !== owners[1]) throw new Error('Review the source identity or super administrator')
 
   const iconCode = requireFile('src/scripts/random-icon.js')
   const publicAsset = value => {
-    if (typeof value !== 'string') throw new Error('referência de mídia legada inválida')
+    if (typeof value !== 'string') throw new Error('Invalid legacy media reference')
     const file = safePath(value.replace(/^\.\//, '').replace(/^\//, ''))
-    if (!mediaPath.test(file) || !files.has(file)) throw new Error('uma imagem referenciada pela instalação legada está ausente ou usa formato incompatível')
+    if (!mediaPath.test(file) || !files.has(file)) throw new Error('A referenced legacy image is missing or uses an unsupported format')
     return '/' + file
   }
   const manifestFile = capture(iconCode, /const manifestUrl\s*=\s*['"]\/(src\/data\/[a-z0-9_-]+\.json)['"]/)
   let icons
-  try { icons = JSON.parse(requireFile(manifestFile)) } catch { throw new Error('o manifesto legado de ícones é inválido') }
-  if (!Array.isArray(icons?.icons)) throw new Error('o manifesto legado de ícones é inválido')
+  try { icons = JSON.parse(requireFile(manifestFile)) } catch { throw new Error('Invalid legacy icon manifest') }
+  if (!Array.isArray(icons?.icons)) throw new Error('Invalid legacy icon manifest')
   const logo = publicAsset(capture(iconCode, /const fallbackIcon\s*=\s*['"]([^'"]+)['"]/))
   icons = { icons: icons.icons.map(publicAsset), fallback: publicAsset(icons.fallback || logo) }
   const badge = publicAsset(capture(requireFile('src/scripts/renderers/wiki-renderer.js'), /<img src="([^"]+)" alt="Powered by WikiCambada Core"/))
@@ -163,8 +163,8 @@ export function inspectLegacy(source, base) {
   config.access.superAdminEmail = owners[0]
   config.cloudflare = { projectName: wrangler.name, databaseName: db[0].database_name, bucketName: bucket[0].bucket_name }
   const cloudflare = { ...config.cloudflare }
-  try { validateConfig(config) } catch { throw new Error('uma configuração da origem é incompatível com o Core') }
-  if (Object.keys(cloudflare).some(key => !cloudflare[key] || config.cloudflare[key] !== cloudflare[key])) throw new Error('os nomes dos recursos Cloudflare não podem ser preservados com segurança')
+  try { validateConfig(config) } catch { throw new Error('A source setting is incompatible with the Core') }
+  if (Object.keys(cloudflare).some(key => !cloudflare[key] || config.cloudflare[key] !== cloudflare[key])) throw new Error('The Cloudflare resource names cannot be safely preserved')
 
   const modifiedCode = []
   for (const file of [...new Set([...Object.keys(profile.engine), ...[...files].filter(file => /^(?:functions\/|src\/(?:scripts|styles)\/)/.test(file))])].sort()) {
@@ -183,21 +183,21 @@ export function inspectLegacy(source, base) {
 }
 
 export async function migrateLegacy(base, { source, file, destination }) {
-  if (Boolean(source) === Boolean(file)) throw new Error('selecione uma pasta ou um ZIP de origem')
+  if (Boolean(source) === Boolean(file)) throw new Error('Select a source directory or ZIP')
   destination = localPath(destination)
   const basename = safePath(path.basename(destination))
-  if (/[<>"|?*]/.test(basename)) throw new Error('caminho de destino inválido')
+  if (/[<>"|?*]/.test(basename)) throw new Error('Invalid destination path')
   if (source) source = fs.realpathSync.native(localPath(source))
   const parent = fs.realpathSync.native(path.dirname(destination))
   destination = path.join(parent, basename)
-  if (overlaps(fs.realpathSync.native(base.root), destination) || source && overlaps(source, destination)) throw new Error('o destino deve ficar fora do Core e da origem')
-  if (!fs.statSync(parent).isDirectory()) throw new Error('a pasta que contém o destino não existe')
+  if (overlaps(fs.realpathSync.native(base.root), destination) || source && overlaps(source, destination)) throw new Error('The destination must be outside both the Core and the source')
+  if (!fs.statSync(parent).isDirectory()) throw new Error('The parent directory of the destination does not exist')
   function checkDestination() {
     try { fs.lstatSync(destination) } catch (error) { if (error.code === 'ENOENT') return; throw error }
-    throw new Error('o destino da migração precisa ser uma pasta nova')
+    throw new Error('The migration destination must be a new directory')
   }
   checkDestination()
-  if (source && !fs.statSync(source).isDirectory() && (!fs.statSync(source).isFile() || path.extname(source).toLowerCase() !== '.zip')) throw new Error('a origem precisa ser uma pasta ou um ZIP')
+  if (source && !fs.statSync(source).isDirectory() && (!fs.statSync(source).isFile() || path.extname(source).toLowerCase() !== '.zip')) throw new Error('The source must be a directory or ZIP')
   return operationLock(parent, async () => {
     checkDestination()
     const staging = fs.mkdtempSync(path.join(parent, '.wikicambada', 'legacy-migration-'))
@@ -208,7 +208,7 @@ export async function migrateLegacy(base, { source, file, destination }) {
         const archive = path.join(staging, 'legacy.zip')
         if (file) fs.writeFileSync(archive, decodeBase64(file.data, 64 * 1024 * 1024), { mode: 0o600 })
         else {
-          if (fs.statSync(source).size > 64 * 1024 * 1024) throw new Error('o ZIP de origem excede o limite da migração')
+          if (fs.statSync(source).size > 64 * 1024 * 1024) throw new Error('The source ZIP exceeds the migration limit')
           fs.copyFileSync(source, archive)
         }
         root = path.join(staging, 'source')
@@ -236,7 +236,7 @@ export async function migrateLegacy(base, { source, file, destination }) {
       const files = migrated.read(release.filesManifest).files
       const managedNames = new Map(Object.keys(files).map(name => [name.toLowerCase(), name]))
       for (const name of preservedAssets) {
-        if (managedNames.has(name.toLowerCase()) && managedNames.get(name.toLowerCase()) !== name) throw new Error('uma mídia legada colide com a grafia de um arquivo do Core')
+        if (managedNames.has(name.toLowerCase()) && managedNames.get(name.toLowerCase()) !== name) throw new Error('A legacy media path conflicts with the case of a Core file')
         delete files[name]
       }
       const backup = '.wikicambada/backups/legacy-' + version
@@ -266,7 +266,7 @@ export async function migrateLegacy(base, { source, file, destination }) {
         hasLocalState, accessReview: wrangler.vars.ACCESS_STRICT !== 'true'
       }
       const verification = migrated.verify()
-      if (!verification.ok) throw new Error('a instalação migrada falhou na verificação: ' + verification.checks.filter(check => !check.ok).map(check => check.name === 'integridade dos arquivos do Core' ? check.message : check.name).join(', '))
+      if (!verification.ok) throw new Error(`The migrated installation failed verification: ${verification.checks.filter(check => !check.ok).map(check => check.name === 'integridade dos arquivos do Core' ? check.message : check.name).join(', ')}`)
       await buildPublic(migrated.root)
       migrated.write('.wikicambada/legacy-migration.json', result)
       checkDestination()

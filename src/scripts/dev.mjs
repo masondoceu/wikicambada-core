@@ -7,7 +7,7 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 
 export async function localProxy(target, secret, { host = '127.0.0.1', port = 8788 } = {}) {
-  if (!['127.0.0.1', '::1'].includes(host) || !['127.0.0.1', '[::1]'].includes(new URL(target).hostname)) throw new Error('o desenvolvimento deve escutar em loopback')
+  if (!['127.0.0.1', '::1'].includes(host) || !['127.0.0.1', '[::1]'].includes(new URL(target).hostname)) throw new Error('The development server must listen on loopback')
   let origin
   const server = http.createServer((request, response) => {
     if (request.headers.host !== new URL(origin).host || request.headers.origin && request.headers.origin !== origin || request.headers['sec-fetch-site'] === 'cross-site' || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress)) { response.writeHead(403); response.end(); return }
@@ -25,7 +25,7 @@ export async function localProxy(target, secret, { host = '127.0.0.1', port = 87
 }
 async function main() {
   const { values } = parseArgs({ options: { port: { type: 'string', default: '8788' }, ip: { type: 'string', default: '127.0.0.1' } } })
-  if (!['127.0.0.1', '::1'].includes(values.ip)) throw new Error('o desenvolvimento deve escutar em loopback')
+  if (!['127.0.0.1', '::1'].includes(values.ip)) throw new Error('The development server must listen on loopback')
   const reservation = net.createServer()
   await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve)); const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve))
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), secret = randomBytes(32).toString('hex')

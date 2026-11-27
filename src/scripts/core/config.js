@@ -65,7 +65,7 @@ export let SITE_CONFIG = structuredClone(DEFAULT_SITE_CONFIG)
 export let HOME_SLUG = SITE_CONFIG.site.homeSlug
 export let SLOGAN = SITE_CONFIG.site.tagline
 export let SITE_NAME = SITE_CONFIG.site.name
-export let APP_VERSION = 'v1.1.1-indev.1'
+export let APP_VERSION = 'v1.1.1-indev.2'
 export let DEFAULT_RANDOM_SLUGS = [HOME_SLUG]
 export let GLOBAL_SETTINGS = structuredClone(DEFAULT_SITE_CONFIG.features)
 
@@ -140,7 +140,7 @@ export function applySiteConfigToDocument(preserveTitle = false) {
   root.style.setProperty('--site-accent', SITE_CONFIG.appearance?.accentColor || '#3366cc')
   root.style.setProperty('--site-font-interface', SITE_CONFIG.appearance?.fonts?.interface || 'system-ui, sans-serif')
   const contentFont = SITE_CONFIG.appearance?.fonts?.content
-  // a configuração antiga gravava a fonte dos títulos como se fosse a do texto
+  // older configurations stored the heading font as the body font
   if (!contentFont || contentFont === 'Georgia, serif' || contentFont === "Georgia, 'Times New Roman', Times, serif") {
     root.style.removeProperty('--site-font-content')
   } else {
@@ -207,10 +207,10 @@ export async function loadSiteConfig(initial) {
 }
 
 export async function loadGlobalSettings() {
-  const response = await fetch('/api/settings', { headers: { accept: 'application/json' }, cache: 'no-store' })
-  if (!response.ok) throw Object.assign(new Error(`api ${response.status}`), { status: response.status })
+  const response = await fetch('/api/settings', { headers: { accept: 'application/json', 'x-wiki-language': SITE_CONFIG.site.interfaceLanguage }, cache: 'no-store' })
+  if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status })
   const data = await response.json()
-  if (!data?.settings || typeof data.settings !== 'object') throw new Error('configurações inválidas da api')
+  if (!data?.settings || typeof data.settings !== 'object') throw new Error('Invalid settings API response')
   GLOBAL_SETTINGS = mergeObject(SITE_CONFIG.features || {}, data.settings)
   applySiteConfigToDocument()
   return GLOBAL_SETTINGS

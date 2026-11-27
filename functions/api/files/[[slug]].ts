@@ -17,25 +17,25 @@ function safeInlineType(value: string | null) {
 }
 
 export async function onRequestGet({ env, params }: Context) {
-  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('mídia desativada', 403)
+  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('Media disabled', 403)
   const parts = parsePath(params.slug)
   const wantsContent = parts[parts.length - 1] === 'content'
   const slugParts = wantsContent ? parts.slice(0, -1) : parts
   const slug = normalizeSlug(slugParts)
 
-  if (!slug) return error('arquivo ausente', 400)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado para consultar arquivos', 501)
+  if (!slug) return error('Missing file', 400)
+  if (!hasDb(env)) return error('D1 is not bound for file lookup', 501)
 
   const file = await readUpload(env, slug)
-  if (!file) return error('arquivo não encontrado', 404)
+  if (!file) return error('File not found', 404)
 
   if (!wantsContent) {
     return json(await publicUploadMetadata(env, file))
   }
-  if (!env.WIKI_BUCKET) return error('R2 ainda não foi ligado para servir arquivos', 501)
+  if (!env.WIKI_BUCKET) return error('R2 is not bound for serving files', 501)
 
   const object = await env.WIKI_BUCKET.get(file.r2Key)
-  if (!object) return error('objeto não encontrado no R2', 404)
+  if (!object) return error('Object not found in R2', 404)
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)

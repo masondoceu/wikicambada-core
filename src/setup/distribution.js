@@ -9,7 +9,7 @@ import { releaseManifest, validateRelease } from './updater.js'
 
 export async function buildPackage(destination, project = new Project()) {
   destination = path.resolve(destination)
-  if (fs.existsSync(destination)) throw new Error('o pacote de destino já existe')
+  if (fs.existsSync(destination)) throw new Error('The destination package already exists')
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'wikicambada-release-'))
   try {
     for (const folder of ['functions', 'src/scripts', 'src/styles', 'src/setup', 'src/tests', 'src/data/migrations']) {

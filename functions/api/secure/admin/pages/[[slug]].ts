@@ -6,11 +6,11 @@ type Context = EventContext<Env, string, { slug?: string[] | string }>
 
 export async function onRequestPost({ request, env, params }: Context) {
   const slug = normalizeSlug(params.slug)
-  if (!slug) return error('slug ausente', 400)
+  if (!slug) return error('Missing slug', 400)
 
   const user = await requireRole(request, env, 'admin')
-  if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('Administration blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const input: any = await request.json().catch(() => null)
   const action = String(input?.action || '').trim()
@@ -18,13 +18,13 @@ export async function onRequestPost({ request, env, params }: Context) {
   try {
     if (action === 'lock') {
       const result = await setPageLock(env, slug, true, user.email)
-      if (!result) return error('página não encontrada', 404)
+      if (!result) return error('Page not found', 404)
       return json(result)
     }
 
     if (action === 'unlock') {
       const result = await setPageLock(env, slug, false, user.email)
-      if (!result) return error('página não encontrada', 404)
+      if (!result) return error('Page not found', 404)
       return json(result)
     }
 
@@ -34,17 +34,17 @@ export async function onRequestPost({ request, env, params }: Context) {
         slug: input?.slug,
         summary: input?.summary
       }, user.email)
-      if (!result) return error('página não encontrada', 404)
+      if (!result) return error('Page not found', 404)
       return json({ ok: true, page: result })
     }
 
     if (action === 'delete') {
       const result = await deletePage(env, slug, user.email)
-      if (!result) return error('página não encontrada', 404)
+      if (!result) return error('Page not found', 404)
       return json(result)
     }
 
-    return error('ação inválida', 400)
+    return error('Invalid action', 400)
   } catch (exception) {
     return failure(exception)
   }
@@ -52,13 +52,13 @@ export async function onRequestPost({ request, env, params }: Context) {
 
 export async function onRequestDelete({ request, env, params }: Context) {
   const slug = normalizeSlug(params.slug)
-  if (!slug) return error('slug ausente', 400)
+  if (!slug) return error('Missing slug', 400)
 
   const user = await requireRole(request, env, 'admin')
-  if (!user) return error('administração bloqueada pela política de acesso', 401)
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!user) return error('Administration blocked by the access policy', 401)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const result = await deletePage(env, slug, user.email)
-  if (!result) return error('página não encontrada', 404)
+  if (!result) return error('Page not found', 404)
   return json(result)
 }

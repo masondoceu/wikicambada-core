@@ -21,7 +21,7 @@ function pickIndex(length) {
 
 async function readManifest(url) {
   const response = await fetch(url, { cache: 'no-store' })
-  if (!response.ok) throw new Error('manifesto indisponível')
+  if (!response.ok) throw new Error('Icon manifest unavailable')
   return response.json()
 }
 

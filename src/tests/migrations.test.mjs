@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { migrations } from '../setup/recovery.js'
 
-test('migrations posteriores preservam os dados editoriais e as proteções de recuperação', () => {
+test('Later migrations preserve editorial data and recovery protections', () => {
   const db = new DatabaseSync(':memory:'), sql = migrations()
   try {
     for (const migration of sql.slice(0, 14)) db.exec(migration)

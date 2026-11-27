@@ -17,15 +17,15 @@ function safeInlineType(value: string | null) {
 
 export async function onRequestGet({ env, params }: Context) {
   const key = normalizeKey(params.key)
-  if (!key) return error('arquivo ausente', 400)
-  if (!env.WIKI_BUCKET) return error('R2 ainda não foi ligado nesta instalação', 501)
+  if (!key) return error('Missing file', 400)
+  if (!env.WIKI_BUCKET) return error('R2 is not bound on this installation', 501)
 
-  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('mídia desativada', 403)
-  if (!env.DB) return error('armazenamento indisponível', 503)
+  if (!(await globalSettingEnabled(env, 'mediaUploads'))) return error('Media disabled', 403)
+  if (!env.DB) return error('Storage unavailable', 503)
   const registered = await env.DB.prepare("SELECT id FROM uploads WHERE r2_key = ? AND COALESCE(status, 'published') = 'published'").bind(key).first()
-  if (!registered) return error('arquivo não encontrado', 404)
+  if (!registered) return error('File not found', 404)
   const object = await env.WIKI_BUCKET.get(key)
-  if (!object) return error('arquivo não encontrado', 404)
+  if (!object) return error('File not found', 404)
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)
@@ -38,5 +38,5 @@ export async function onRequestGet({ env, params }: Context) {
 }
 
 export async function onRequestPut() {
-  return error('a rota legada de upload foi desativada', 410)
+  return error('The legacy upload route is disabled', 410)
 }

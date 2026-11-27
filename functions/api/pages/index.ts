@@ -4,7 +4,7 @@ import { error, json } from '../_lib/response'
 type Context = EventContext<Env, string, Record<string, never>>
 
 export async function onRequestGet({ request, env }: Pick<Context, 'request' | 'env'>) {
-  if (!hasDb(env)) return error('D1 ainda não foi ligado nesta instalação', 501)
+  if (!hasDb(env)) return error('D1 is not bound on this installation', 501)
 
   const url = new URL(request.url)
   const sort = url.searchParams.get('sort') === 'recent' ? 'recent' : 'title'

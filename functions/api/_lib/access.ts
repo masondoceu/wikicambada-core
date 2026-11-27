@@ -143,7 +143,7 @@ async function fetchJwks(teamDomain: string, refresh = false) {
   }
 
   const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) })
-  if (!response.ok) throw new Error('jwks indisponível')
+  if (!response.ok) throw new Error('JWKS unavailable')
 
   const data = await response.json() as { keys?: JsonWebKey[] }
   const keys = Array.isArray(data.keys) ? data.keys : []
@@ -383,8 +383,8 @@ export async function requireAccessUser(request: Request, env: AccessEnv = {}): 
 
   if (!user.authenticated || !user.email) return null
   if (strict && !user.verified && user.access !== 'development') return null
-  if (user.status === 'unavailable') throw Object.assign(new Error('armazenamento temporariamente indisponível'), { status: 503 })
-  if (!user.canEdit || user.status !== 'active') throw Object.assign(new Error('conta desativada'), { status: 403 })
+  if (user.status === 'unavailable') throw Object.assign(new Error('Storage temporarily unavailable'), { status: 503 })
+  if (!user.canEdit || user.status !== 'active') throw Object.assign(new Error('Account disabled'), { status: 403 })
 
   return { ...user, email: user.email, canEdit: true, status: 'active' }
 }
@@ -392,6 +392,6 @@ export async function requireAccessUser(request: Request, env: AccessEnv = {}): 
 export async function requireRole(request: Request, env: AccessEnv = {}, minimum: UserRole = 'editor') {
   const user = await requireAccessUser(request, env)
   if (!user) return null
-  if (!roleAtLeast(user, minimum)) throw Object.assign(new Error('permissão insuficiente'), { status: 403 })
+  if (!roleAtLeast(user, minimum)) throw Object.assign(new Error('Insufficient permissions'), { status: 403 })
   return user
 }

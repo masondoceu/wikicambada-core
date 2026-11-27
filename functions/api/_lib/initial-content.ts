@@ -3,7 +3,7 @@ import type { Env } from './d1'
 export async function seedInitialContent(env: Env) {
   if (!env.DB || !env.WIKI_INITIAL_CONTENT) return
   const input = JSON.parse(env.WIKI_INITIAL_CONTENT)
-  if (!input?.id || !['pt-BR', 'en'].includes(input.language) || !/^[a-z0-9-]+$/.test(input.homeSlug) || !/^[a-z0-9-]+$/.test(input.guideSlug) || input.homeSlug === input.guideSlug) throw new Error('configuração de conteúdo inicial inválida')
+  if (!input?.id || !['pt-BR', 'en'].includes(input.language) || !/^[a-z0-9-]+$/.test(input.homeSlug) || !/^[a-z0-9-]+$/.test(input.guideSlug) || input.homeSlug === input.guideSlug) throw new Error('Invalid initial content configuration')
   const existing = await env.DB.prepare("SELECT key FROM system_settings WHERE key = 'initial_content'").first()
   if (existing) return
   const english = input.language === 'en', now = new Date().toISOString(), token = crypto.randomUUID()

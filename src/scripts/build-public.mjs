@@ -1,16 +1,18 @@
 import { copyFile, mkdir, mkdtemp, readFile, readdir, lstat, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve, relative, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { translate } from './core/i18n.js'
+import { escapeHtml } from './core/utils.js'
 
 export async function buildPublic(root = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), output = resolve(root, '.wikicambada/public')) {
   root = resolve(root)
   output = resolve(output)
-  if (relative(root, output).replaceAll('\\', '/') !== '.wikicambada/public') throw new Error('destino de publicação inválido')
+  if (relative(root, output).replaceAll('\\', '/') !== '.wikicambada/public') throw new Error('Invalid public build destination')
   async function checkPath(path) {
     let current = root
     for (const part of relative(root, resolve(root, path)).split(/[\\/]/).filter(Boolean)) {
       current = resolve(current, part)
-      try { if ((await lstat(current)).isSymbolicLink()) throw new Error(`caminho simbólico: ${path}`) }
+      try { if ((await lstat(current)).isSymbolicLink()) throw new Error(`Symbolic link in path: ${path}`) }
       catch (error) { if (error.code !== 'ENOENT') throw error }
     }
   }
@@ -22,15 +24,15 @@ export async function buildPublic(root = resolve(dirname(fileURLToPath(import.me
     await checkPath(path)
     const source = resolve(root, path)
     const stat = await lstat(source)
-    if (stat.isSymbolicLink()) throw new Error(`asset simbólico: ${path}`)
-    if (!stat.isFile()) throw new Error(`asset inválido: ${path}`)
+    if (stat.isSymbolicLink()) throw new Error(`Symbolic link in asset: ${path}`)
+    if (!stat.isFile()) throw new Error(`Invalid asset: ${path}`)
     const destination = resolve(stage, path)
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
   }
   async function tree(path, extensions) {
     const stat = await lstat(resolve(root, path))
-    if (stat.isSymbolicLink()) throw new Error(`diretório simbólico: ${path}`)
+    if (stat.isSymbolicLink()) throw new Error(`Symbolic link in directory: ${path}`)
     for (const entry of await readdir(resolve(root, path), { withFileTypes: true })) {
       const child = `${path}/${entry.name}`
       if (entry.isDirectory()) await tree(child, extensions)
@@ -38,7 +40,22 @@ export async function buildPublic(root = resolve(dirname(fileURLToPath(import.me
     }
   }
   try {
-    for (const path of ['index.html', '404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked/index.html', 'access-denied/index.html', 'login-error/index.html', 'non-identity-blocked/index.html']) await copy(path)
+    await checkPath('src/config/site.json')
+    const config = JSON.parse(await readFile(resolve(root, 'src/config/site.json'), 'utf8'))
+    const language = config.site?.interfaceLanguage === 'en' ? 'en' : 'pt-BR'
+    const errorPages = ['404.html', 'access-blocked.html', 'access-denied.html', 'access-blocked/index.html', 'access-denied/index.html', 'login-error/index.html', 'non-identity-blocked/index.html']
+    await copy('index.html')
+    for (const path of errorPages) {
+      await copy(path)
+      const destination = resolve(stage, path)
+      let html = await readFile(destination, 'utf8')
+      const titleKey = html.match(/data-static-title data-i18n="([^"]+)"/)?.[1]
+      html = html.replace('<html lang="pt-BR" class="error-booting">', `<html lang="${language}" class="error-ready">`)
+        .replace(/(<([a-z][a-z0-9]*)\b[^>]*\bdata-i18n="([^"]+)"[^>]*>)[^<]*(<\/\2>)/gi, (_, open, tag, key, close) => open + escapeHtml(translate(language, key)) + close)
+        .replace(/(<([a-z][a-z0-9]*)\b[^>]*\bdata-site-name\b[^>]*>)[^<]*(<\/\2>)/gi, (_, open, tag, close) => open + escapeHtml(config.site?.name || 'WikiCambada Core') + close)
+      if (titleKey) html = html.replace(/<title>[^<]*<\/title>/, () => `<title>${escapeHtml(translate(language, titleKey))} — ${escapeHtml(config.site?.name || 'WikiCambada Core')}</title>`)
+      await writeFile(destination, html)
+    }
     const scripts = ['app.js', 'api.js', 'theme.js', 'media-viewer.js', 'random-icon.js', 'static-page.js']
     for (const script of scripts) await copy(`src/scripts/${script}`)
     for (const script of ['core/config.js', 'core/i18n.js', 'core/utils.js', 'renderers/wiki-markdown.js', 'renderers/wiki-renderer.js', 'routes/wiki-router.js', 'routes/wiki-special.js', 'services/wiki-api.js']) await copy(`src/scripts/${script}`)
@@ -47,8 +64,6 @@ export async function buildPublic(root = resolve(dirname(fileURLToPath(import.me
       try { await tree(`src/media/${folder}`, new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.otf'])) }
       catch (error) { if (error.code !== 'ENOENT') throw error }
     }
-    await checkPath('src/config/site.json')
-    const config = JSON.parse(await readFile(resolve(root, 'src/config/site.json'), 'utf8'))
     const pick = (value, keys) => Object.fromEntries(keys.filter(key => value && Object.hasOwn(value, key)).map(key => [key, value[key]]))
     const publicIcons = manifest => ({ icons: Array.isArray(manifest.icons) ? manifest.icons.filter(icon => typeof icon === 'string') : [], fallback: typeof manifest.fallback === 'string' ? manifest.fallback : '' })
     await checkPath('src/data/wiki-icons.json')
@@ -64,10 +79,10 @@ export async function buildPublic(root = resolve(dirname(fileURLToPath(import.me
     const schemaVersion = config.schemaVersion
     if (branding.randomIconManifest?.startsWith('/')) {
       const path = branding.randomIconManifest.slice(1)
-      if (!/^src\/(data|media)\/[a-z0-9_./-]+\.json$/i.test(path) || path.split('/').includes('..')) throw new Error('manifesto público de ícones inválido')
+      if (!/^src\/(data|media)\/[a-z0-9_./-]+\.json$/i.test(path) || path.split('/').includes('..')) throw new Error('Invalid public icon manifest')
       await checkPath(path)
       const stat = await lstat(resolve(root, path))
-      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('manifesto de ícones inválido')
+      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Invalid icon manifest')
       const manifest = JSON.parse(await readFile(resolve(root, path), 'utf8'))
       await mkdir(dirname(resolve(stage, path)), { recursive: true })
       await writeFile(resolve(stage, path), JSON.stringify(publicIcons(manifest)))

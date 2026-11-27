@@ -6,7 +6,7 @@ import { exactSearchResult, isGeneratedSpecialSlug, specialFeature, specialPageI
 import { createWikiRenderer } from '../../src/scripts/renderers/wiki-renderer.js'
 import { readPublicConfig, readerHeaders, readerRedirect, renderReadDocument, type ReaderContext } from './read-document'
 import { serveSpa } from './spa'
-import { json } from '../api/_lib/response'
+import { error, localizeErrorResponse } from '../api/_lib/response'
 import release from '../../wikicambada-release.json'
 
 function editorialDescription(markdown: string) {
@@ -38,15 +38,16 @@ function representativeImage(html: string) {
 export async function serveRead(context: ReaderContext): Promise<Response> {
   const { request, env } = context
   const url = new URL(request.url)
+  let language = env.WIKI_INTERFACE_LANGUAGE
   try {
     const config = await readPublicConfig(context)
+    language = config.site.interfaceLanguage
     const home = config.site.homeSlug
     const route = parseRoute(url, home)
     if (!['read', 'history', 'search'].includes(route.mode)) return serveSpa(context)
-    if (!env.DB) return json({ ok: false, error: 'serviço temporariamente indisponível' }, { status: 503, headers: readerHeaders })
+    if (!env.DB) return localizeErrorResponse(error('Service temporarily unavailable', 503, readerHeaders), language)
 
     const settings = await getGlobalSettings(env)
-    const language = config.site.interfaceLanguage === 'en' ? 'en' : 'pt-BR'
     const locale = language === 'en' ? 'en-US' : 'pt-BR'
     const ui = (pt: string, en: string) => language === 'en' ? en : pt
     const enabled = (key: string, fallback = true) => configuredFeature(config, settings, key, fallback)
@@ -69,7 +70,7 @@ export async function serveRead(context: ReaderContext): Promise<Response> {
         else params.delete('offset')
         return escapeHtml(path + (params.size ? `?${params}` : ''))
       }
-      const anchor = (key: string, start: number) => `<a class="secondary-button" data-link="route" href="${href(start)}">${escapeHtml(translate(language, key))}</a>`
+      const anchor = (key: string, start: number) => `<a class="secondary-button" data-link="route" href="${href(start)}">${escapeHtml(translate(language || 'pt-BR', key))}</a>`
       return offset || next !== null ? `<nav>${offset ? anchor('common.previous', Math.max(0, offset - size)) : ''} ${next !== null ? anchor('common.next', next) : ''}</nav>` : ''
     }
 
@@ -167,6 +168,6 @@ export async function serveRead(context: ReaderContext): Promise<Response> {
     return present(page.title, html, { slug: page.slug, canonical, description: editorialDescription(page.content) || page.subtitle, image: representativeImage(html) })
   } catch (cause) {
     const status = cause && typeof cause === 'object' && 'status' in cause && cause.status === 400 ? 400 : 503
-    return json({ ok: false, error: status === 400 ? 'consulta inválida' : 'serviço temporariamente indisponível' }, { status, headers: readerHeaders })
+    return localizeErrorResponse(error(status === 400 ? 'Invalid query' : 'Service temporarily unavailable', status, readerHeaders), language)
   }
 }

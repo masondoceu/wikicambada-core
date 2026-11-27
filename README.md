@@ -445,6 +445,8 @@ Pages deploys only `.wikicambada/public`, prepared by `npm run build`. Developme
 
 ## Development
 
+Core diagnostics and command-line output use English. The setup, wiki interface and editorial content each retain their own language settings. API clients can request English error text with `X-Wiki-Language: en`. Requests without the header retain the existing Portuguese responses, status codes and JSON fields.
+
 ### Hybrid article rendering (Everywhere development build)
 
 Pages Functions render public reading routes with the same editorial parser as the SPA. For an initial article request, the browser keeps the rendered article and reads the public configuration and feature settings embedded in the document. The editor, preview and subsequent SPA navigation continue to run in the browser.
